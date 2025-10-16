@@ -16,6 +16,13 @@
   <script src="https://unpkg.com/konva@9/konva.min.js"></script>
 
   <!-- App -->
+
+  <script>
+  // Point everything to same-origin API on Render
+  window.API_BASE = ""; // empty = same origin
+  window.TRINKETS_API = (window.API_BASE || "") + "/trinkets.json";
+</script>
+
   <script src="script.js" defer></script>
 </head>
 <body>

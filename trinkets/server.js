@@ -1,5 +1,4 @@
-// server.js
-// Express server for Trinkets: serves static site + JSON API + persistent uploads on Render.
+// server.js — FREE setup using ephemeral storage at /tmp (no paid disk)
 
 const express = require('express');
 const path = require('path');
@@ -8,26 +7,26 @@ const fsp = require('fs/promises');
 const cors = require('cors');
 
 const app = express();
-
-// ---------- Config ----------
 const PORT = process.env.PORT || 5050;
 
-// On Render, containers are ephemeral. We'll mount a persistent disk at /data via render.yaml.
-const DATA_DIR    = process.env.DATA_DIR    || '/data';
-const UPLOAD_DIR  = process.env.UPLOAD_DIR  || path.join(DATA_DIR, 'uploads');
-const DB_FILE     = process.env.DB_FILE     || path.join(DATA_DIR, 'db.json');
+/* ========= Storage (FREE) =========
+   We use /tmp (writable on Render free). This is ephemeral:
+   - files are lost on deploys
+   - may be lost on container restarts
+   For persistent storage without paying Render, use an external bucket (R2/Supabase) — see notes below.
+*/
+const DATA_DIR   = process.env.DATA_DIR || '/tmp/trinkets';
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+const DB_FILE    = path.join(DATA_DIR, 'db.json');
 
-// Ensure folders exist
+// Ensure dirs exist (and are writable)
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Allow big JSON posts (drawings)
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
-
-// If you will host front-end elsewhere, restrict CORS; same-origin is fine as-is.
 app.use(cors());
 
-// ---------- Tiny JSON "DB" ----------
+// -------- Tiny JSON “DB” (also in /tmp) --------
 async function loadDB() {
   try {
     const txt = await fsp.readFile(DB_FILE, 'utf8');
@@ -42,7 +41,7 @@ async function saveDB(db) {
   await fsp.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
 }
 
-// ---------- Helpers ----------
+// -------- Helpers --------
 function dataUrlToBuffer(dataUrl) {
   const m = /^data:(.+?);base64,(.+)$/.exec(dataUrl || '');
   if (!m) return null;
@@ -53,35 +52,33 @@ async function writePng(buffer) {
   const name = `trinket_${ts}_${Math.random().toString(36).slice(2)}.png`;
   const abs = path.join(UPLOAD_DIR, name);
   await fsp.writeFile(abs, buffer);
-  return `/uploads/${name}`; // URL path we serve below
+  return `/uploads/${name}`; // we serve this path below
 }
 
-// ---------- API ----------
-// We expose both /api/trinkets and /trinkets(.json) (your street.js can use either)
-
+// -------- API --------
 app.get(['/api/trinkets', '/trinkets', '/trinkets.json'], async (_req, res) => {
   const db = await loadDB();
-  res.json(db.items); // plain array
+  res.json(db.items);
 });
 
 app.post('/api/trinkets', async (req, res) => {
   try {
-    const body = req.body || {};
-    const name = (body.trinketName || body.name || '').toString();
-    const story = (body.trinketText || body.text || '').toString();
-    const drawing = body.drawing || body.image || '';
+    const { trinketName, name, trinketText, text, drawing, image } = req.body || {};
+    const finalName = (trinketName || name || '').toString();
+    const finalText = (trinketText || text || '').toString();
+    const dataUrl   = drawing || image || '';
 
-    if (!drawing.startsWith('data:image/')) {
+    if (!dataUrl.startsWith('data:image/')) {
       return res.status(400).json({ error: 'drawing must be a data:image/*;base64 URL' });
     }
-    const buf = dataUrlToBuffer(drawing);
-    if (!buf) return res.status(400).json({ error: 'Invalid data URL' });
+    const buf = dataUrlToBuffer(dataUrl);
+    if (!buf) return res.status(400).json({ error: 'invalid data URL' });
 
     const image_path = await writePng(buf);
 
     const db = await loadDB();
     const id = db.seq++;
-    const item = { id, name, story, image_path, created_at: new Date().toISOString() };
+    const item = { id, name: finalName, story: finalText, image_path, created_at: new Date().toISOString() };
     db.items.push(item);
     await saveDB(db);
 
@@ -133,15 +130,14 @@ app.delete('/api/trinkets', async (_req, res) => {
   }
 });
 
-// ---------- Static files ----------
-// Serve the uploaded images at /uploads/*
+// Serve uploaded images
 app.use('/uploads', express.static(UPLOAD_DIR, {
   setHeaders: (res) => {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   }
 }));
 
-// Serve your front-end from /public
+// Serve front-end
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR, {
   extensions: ['html'],
@@ -150,10 +146,9 @@ app.use(express.static(PUBLIC_DIR, {
   }
 }));
 
-// If you want SPA fallback, uncomment:
-// app.get('*', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
+// app.get('*', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html'))); // optional SPA fallback
 
 app.listen(PORT, () => {
-  console.log(`Trinkets server listening on :${PORT}`);
-  console.log(`Data directory: ${DATA_DIR}`);
+  console.log(`Trinkets server on :${PORT}`);
+  console.log(`Ephemeral data dir: ${DATA_DIR}`);
 });

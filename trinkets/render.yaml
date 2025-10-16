@@ -7,7 +7,3 @@ services:
     startCommand: "npm start"
     autoDeploy: true
     healthCheckPath: /street.html
-    disk:
-      name: trinkets-data
-      mountPath: /data
-      sizeGB: 1

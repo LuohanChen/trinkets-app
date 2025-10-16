@@ -1,0 +1,52 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; font-family: "Bitter", serif; background: #f7fafc; color: #111;
+}
+
+.topbar {
+  position: sticky; top: 0; z-index: 10; background: #fff;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px clamp(16px, 4vw, 32px); box-shadow: 0 1px 10px rgba(0,0,0,.06);
+}
+.topbar h1 { margin: 0; font-weight: 300; font-size: clamp(20px, 3.6vw, 28px); }
+.topbar .btn {
+  display: inline-block; margin-left: 8px; text-decoration: none;
+  background: #111; color: #fff; border: 0; border-radius: 999px;
+  padding: 8px 14px; cursor: pointer;
+}
+.topbar .btn.danger { background: #c0392b; }
+
+main { padding: clamp(16px, 5vw, 40px); }
+
+.status { margin-bottom: 12px; font-size: 14px; opacity: .8; min-height: 20px; }
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  background: #fff; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 6px 16px rgba(0,0,0,.08);
+  display: grid; grid-template-rows: auto 1fr; gap: 0;
+}
+
+.image-wrapper {
+  width: 100%; height: 240px; position: relative; overflow: hidden; background: #eee;
+}
+.image-wrapper .shot {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; background: #fff;
+}
+
+.meta { padding: 12px; display: grid; gap: 8px; }
+.meta .name { margin: 0; font-size: 18px; font-weight: 600; }
+.meta .story { margin: 0; font-size: 14px; white-space: pre-wrap; opacity: .9; }
+
+.actions { display: flex; gap: 10px; }
+.actions .deleteBtn {
+  appearance: none; border: 0; padding: 8px 12px; border-radius: 8px;
+  background: #e74c3c; color: #fff; cursor: pointer;
+}
+.actions .deleteBtn:hover { background: #c0392b; }

@@ -1,0 +1,93 @@
+:root {
+  /* JS will overwrite this to keep size consistent across resolutions */
+  --leggy-size: 520px; /* fallback */
+}
+
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; height:100%; }
+
+body {
+  /* Your background image; stays fully visible (no crop) */
+  background-image: url("assets/street.png"); /* change if needed */
+  background-repeat: no-repeat;
+  background-position: 50% 50%;
+  background-size: contain;    /* show the full image */
+  background-color: #000;      /* letterbox color */
+  overflow: hidden;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+}
+
+/* Clipping frame that exactly matches the visible background image rect.
+   JS sets its left/top/width/height and we render walkers inside it. */
+#bgFrame {
+  position: fixed;
+  overflow: hidden;    /* CRITICAL: nothing spills out of the image */
+  pointer-events: none;
+}
+
+/* Walkers live inside the bgFrame */
+#walkerLayer {
+  position: absolute; /* already set in your file; keep it */
+  inset: 0;
+  pointer-events: none;
+}
+
+.walker {
+  position: absolute;
+  width: var(--leggy-size);
+  height: var(--leggy-size);
+  will-change: transform, opacity;
+  opacity: 0; /* will fade in */
+}
+
+.walker .gif,
+.walker .trinket {
+  position: absolute;
+  left: 50%;
+  top: -5%;
+  transform: translateX(-50%); /* we flip with scaleX in JS */
+  width: var(--leggy-size);
+  height: var(--leggy-size);
+  object-fit: contain;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+.walker .trinket {
+  width: calc(var(--leggy-size) * var(--scale, 1));
+  height: auto;
+  transform: translateX(calc(-50% + var(--tx, 0px))) translateY(var(--ty, 0px));
+}
+
+/* Floating bubble that follows the walker/trinket */
+.walker .bubble {
+  position: absolute;
+  left: calc(50% + var(--btx, 0px));  /* usually centered; can offset via --btx */
+  top: var(--bty, 0px);               /* set by JS near the trinket */
+  transform: translate(-50%, -100%);  /* sit above the anchor point */
+  max-width: min(280px, calc(var(--leggy-size) * 2.2));
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(20,20,25,0.82);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.25;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  pointer-events: none;
+  z-index: 999;                       /* above everything in the scene */
+  opacity: 0;
+  transition: opacity 320ms ease-out;
+  backdrop-filter: blur(2px);
+}
+
+.walker .bubble .title {
+  font-weight: 700;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.walker .bubble .desc {
+  opacity: 0.95;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

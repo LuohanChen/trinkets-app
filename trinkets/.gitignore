@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log*
+.DS_Store
+
+# Local-only data; Render disk is mounted at /data (outside repo)
+data/
+uploads/
+dist/

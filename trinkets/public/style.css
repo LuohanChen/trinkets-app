@@ -1,0 +1,202 @@
+/* Base */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: "Bitter", serif; }
+body { background: #9fc4da; overflow: hidden; }
+.hidden { display: none !important; }
+
+/* Start / Loading screen */
+.loading-screen { 
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: rgb(159,196,218); z-index: 10; transition: opacity 700ms ease;
+}
+
+/* Floating images */
+.float-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+
+.float-img {
+  position: absolute; top: 0; left: 0;
+  width: 240px; height: 240px;      /* fallback; JS will override */
+  object-fit: cover; border-radius: 8px;
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,.15));
+  transform: translateX(110vw);
+  opacity: 0;                        /* start hidden */
+  transition: opacity 900ms ease;    /* smoother fade-in */
+}
+.float-img.visible { opacity: 1; }
+
+@keyframes floatLeft {
+  from { transform: translateX(110vw) translateZ(0); }
+  to   { transform: translateX(-140vw) translateZ(0); }
+}
+
+/* Centered content */
+.start-wrap {
+  position: relative; z-index: 2;
+  max-width: min(92vw, 980px);
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  text-align: center; padding: 24px;
+}
+
+/* Use CSS var for fade duration so JS can tweak per element */
+.start-title,
+#sequence,
+#finalPrompt {
+  --fade-ms: 400ms;
+  transition: opacity var(--fade-ms) ease;
+}
+
+.start-title {
+  margin: 0; line-height: 1.1; font-weight: 300;
+  font-size: clamp(28px, 6vw, 64px);
+  color: #0f141a; background: #fff; display: inline-block;
+  padding: .35em .6em;
+  opacity: 1;
+}
+.fade-out { opacity: 0; }
+.fade-in  { opacity: 1; }
+
+.start-btn {
+  appearance: none; border: 0; padding: 14px 28px;
+  background: #111; color: #fff; font-size: clamp(16px, 2.6vw, 20px);
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(.2,.7,.2,1), opacity 140ms ease;
+}
+.start-btn:hover { transform: translateY(-1px); }
+.start-btn:active { transform: translateY(0); }
+.start-hint { margin: 0; font-size: 14px; opacity: .65; }
+
+.sequence .stories-of { opacity: .75; font-weight: 300; }
+
+/* Typewriter word */
+.stories-word {
+  font-weight: 600;
+  margin-left: .35em;
+  display: inline-block;
+  white-space: nowrap;
+  border-right: 2px solid rgba(0,0,0,.85);
+  padding-right: .2em;
+}
+
+/* ===================== Studio ===================== */
+.studio {
+  height: 100vh;                      /* fill viewport */
+  padding: clamp(20px, 5vw, 48px);
+  background: rgb(159,196,218);
+  color: #111;
+  overflow: hidden;                   /* avoid page scrollbars */
+}
+
+.studio-inner {
+  height: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;                      /* header + grid */
+  flex-direction: column;
+  min-height: 0;                      /* allow children to grow */
+}
+
+.studio-header {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 10px;
+  flex: 0 0 auto;
+}
+.studio-header h2, .studio-header h3 { margin: 0; padding: 0; background-color: white; }
+.studio-header h2 { font-weight: 300; font-size: clamp(28px, 4.8vw, 44px); padding-left: 1%; }
+.studio-header h3 { font-weight: 600; font-size: clamp(28px, 4.8vw, 44px); padding-right: 1%; }
+
+/* Grid fills remaining height */
+.studio-grid {
+  flex: 1 1 auto;
+  min-height: 0;                      /* IMPORTANT */
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
+  gap: clamp(12px, 3vw, 28px);
+}
+
+.canvas-col, .text-col { min-height: 0; }
+.canvas-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.canvas-label { font-size: 14px; font-weight: 500; color: #111; margin-left: 4px; }
+
+/* Canvas wrapper fills column */
+.canvas-wrap {
+  flex: 1 1 auto;
+  min-height: 0;                      /* IMPORTANT */
+  display: flex;                      /* canvas on top, tools below */
+  flex-direction: column;
+  gap: 12px;
+  background: #f4f6f8;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+  padding: 12px;
+}
+
+/* Konva mount stretches fully */
+#konvaStage {
+  flex: 1 1 auto;
+  min-height: 0;                      /* IMPORTANT */
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(0,0,0,.08);
+}
+
+/* Tools sit under the canvas */
+.tools {
+  flex: 0 0 auto;
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+.tools label{
+  display: inline-flex; gap: 8px; align-items: center; padding: 6px 10px;
+  background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.tools button{
+  appearance: none; border: 0; padding: 8px 14px; border-radius: 999px;
+  background: #111; color: #fff; cursor: pointer;
+  transition: transform 160ms cubic-bezier(.2,.7,.2,1);
+}
+.tools button:hover{ transform: translateY(-1px); }
+
+.text-col {
+  display: flex; flex-direction: column; gap: 16px;
+  overflow: auto;                     /* scroll text column if very small screens */
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field span { font-size: 14px; opacity: .7; }
+
+#trinketName {
+  width: 60%; max-width: 320px; padding: 8px 12px;
+  border: 1px solid rgba(0,0,0,.12); border-radius: 8px;
+  font-family: "Bitter", serif; font-size: 16px; line-height: 1.4; outline: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04) inset;
+}
+#trinketName:focus { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.08); }
+
+#trinketText {
+  width: 100%; min-height: 180px; resize: vertical; padding: 12px 14px;
+  border: 1px solid rgba(0,0,0,.12); border-radius: 10px;
+  font-family: "Bitter", serif; font-size: 16px; outline: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04) inset;
+}
+#trinketText:focus { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.08); }
+
+.submit-btn {
+  align-self: center; margin-top: 4px; padding: 14px 28px; border-radius: 999px;
+  background: #0077ff; color: #fff; font-size: 18px; font-family: "Bitter", serif;
+  border: 0; cursor: pointer; box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+  transition: transform 160ms cubic-bezier(.2,.7,.2,1), background 160ms;
+}
+.submit-btn:hover { transform: translateY(-2px); background: #005bcc; }
+
+/* Responsive */
+@media (max-width: 980px){
+  .studio { height: auto; min-height: 100vh; }
+  .studio-inner { height: auto; }
+  .studio-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
+  /* Give the canvas a reasonable height on small screens */
+  #konvaStage { height: min(60vh, 520px); }
+  #trinketText { height: 200px; }
+}

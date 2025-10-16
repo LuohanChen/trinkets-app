@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Panel – Trinkets</title>
+  <link rel="stylesheet" href="admin.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@200;300;400;600&display=swap" rel="stylesheet">
+  <script src="admin.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Admin – Trinkets</h1>
+    <nav>
+      <a class="btn" href="/">Back to Studio</a>
+      <button id="clearAll" class="btn danger">Delete All</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="status" class="status"></section>
+    <section id="gallery" class="gallery"></section>
+  </main>
+
+  <template id="card-tpl">
+    <article class="card">
+      <div class="image-wrapper">
+        <img class="shot" alt="Trinket drawing">
+      </div>
+      <div class="meta">
+        <h3 class="name"></h3>
+        <p class="story"></p>
+        <div class="actions">
+          <button class="deleteBtn">Delete</button>
+        </div>
+      </div>
+    </article>
+  </template>
+</body>
+</html>

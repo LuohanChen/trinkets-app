@@ -40,6 +40,13 @@ body {
   opacity: 0; /* will fade in */
 }
 
+/* Subtle depth + separation */
+.walker .gif {
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35))
+          drop-shadow(0 6px 12px rgba(0,0,0,0.18));
+  will-change: transform, filter;
+}
+
 .walker .gif,
 .walker .trinket {
   position: absolute;

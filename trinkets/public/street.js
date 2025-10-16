@@ -33,7 +33,7 @@ const API_CANDIDATES = [
 let LIST_URL = null;  // resolved at runtime
 const DEBUG = true;
 const POLL_MS = 5000;
-const TARGET_LEGS = 10;
+const TARGET_LEGS = 5;
 
 function normalizeListShape(data) {
   if (Array.isArray(data)) return data;

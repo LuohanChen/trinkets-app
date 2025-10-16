@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: trinkets-app
+    env: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    autoDeploy: true
+    healthCheckPath: /street.html
+    disk:
+      name: trinkets-data
+      mountPath: /data
+      sizeGB: 1

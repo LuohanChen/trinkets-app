@@ -123,7 +123,7 @@ const TRINKET_SCALES = { default: 0.3, bag: 0.4, sling: 0.3 };
 // Popup behaviour  //
 //////////////////////
 
-const BUBBLE_LIFETIME_MS = 10000;
+const BUBBLE_LIFETIME_MS = 30000;
 const BUBBLE_SHIFT = { x: 14, y: 18 };
 
 /////////////////////////////

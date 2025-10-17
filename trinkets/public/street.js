@@ -1,20 +1,28 @@
-// Street: keep exactly TARGET_LEGS walkers on screen.
-// - Base "empty" legs that NEVER auto-fade (they bounce within scene).
-// - On new trinket: replace an empty (or oldest) with a trinket walker.
-// - TRINKET: enters from one edge, walks straight across, exits opposite edge, despawns off-screen.
-// - Name popup shows 10s with pop-in, positioned via DOM rects.
-// - Admin controls: spawn_leg, clear_legs, replay.
-// - Prune active trinkets if admin deleted them.
-// - Background containment.
-// - Endpoint auto-discovery (or override with window.TRINKETS_API).
-// - Unified size & baseline across resolutions.
-// - De-dupe via stable key (id or hash of src+created_at).
+/* ===================== DOUBLE-BOOT GUARD ===================== */
+if (window.__streetBooted) {
+  console.warn('[street] script already initialized – skipping second init');
+  throw new Error('street.js already booted');
+}
+window.__streetBooted = true;
 
-/* ------------------------------------------------------------ */
-/*                 Endpoint resolution & polling                */
-/* ------------------------------------------------------------ */
+/* ============================================================= */
+/* Street: keep exactly TARGET_LEGS walkers on screen.
+   - Base "empty" legs that NEVER auto-fade (bounce within scene).
+   - On new trinket: replace an empty (or oldest) with a trinket walker.
+   - TRINKET: enters from one edge, walks straight across, exits opposite edge, despawns off-screen.
+   - Name popup shows 10s with pop-in, positioned via DOM rects.
+   - Admin controls: spawn_leg, clear_legs, replay.
+   - Prune active trinkets if admin deleted them.
+   - Background containment.
+   - Endpoint auto-discovery (or override with window.TRINKETS_API).
+   - Unified size & baseline across resolutions.
+   - Robust de-dupe via stable key (id or hash of src ONLY). */
+/* ============================================================= */
 
-// Optional override from HTML: <script>window.TRINKETS_API="/trinkets.json";</script>
+//////////////////////////
+// Endpoint resolution  //
+//////////////////////////
+
 const OVERRIDE_LIST_URL =
   (typeof window !== "undefined" && window.TRINKETS_API) ? window.TRINKETS_API : null;
 
@@ -29,14 +37,14 @@ const API_CANDIDATES = [
   "/submissions"
 ];
 
-let LIST_URL = null;  // resolved at runtime
+let LIST_URL = null;
 const DEBUG = true;
 const POLL_MS = 10000;
 const TARGET_LEGS = 2;
 
-/* ------------------------------------------------------------ */
-/*                         Helpers: API                         */
-/* ------------------------------------------------------------ */
+////////////////////
+// API utilities  //
+////////////////////
 
 function normalizeListShape(data) {
   if (Array.isArray(data)) return data;
@@ -53,49 +61,36 @@ async function probeJson(url, timeoutMs = 2500) {
   try {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), timeoutMs);
-
     const res = await fetch(url, { headers: { "Accept":"application/json" }, cache: "no-store", signal: ctrl.signal });
     clearTimeout(to);
-
-    if (!res.ok) return { ok: false, status: res.status };
-
+    if (!res.ok) return { ok:false, status:res.status };
     const txt = await res.text();
     let data = null;
     try { data = JSON.parse(txt); } catch {}
     const list = normalizeListShape(data);
-    return { ok: Array.isArray(list), status: res.status, list };
+    return { ok:Array.isArray(list), status:res.status, list };
   } catch {
-    return { ok: false, status: 0 };
+    return { ok:false, status:0 };
   }
 }
 
 async function resolveListUrl() {
   if (OVERRIDE_LIST_URL) {
     const test = await probeJson(OVERRIDE_LIST_URL);
-    if (test.ok) {
-      DEBUG && console.log("[street] Using override LIST_URL:", OVERRIDE_LIST_URL);
-      return OVERRIDE_LIST_URL;
-    }
+    if (test.ok) { DEBUG && console.log("[street] Using override LIST_URL:", OVERRIDE_LIST_URL); return OVERRIDE_LIST_URL; }
     DEBUG && console.warn("[street] Override LIST_URL failed:", OVERRIDE_LIST_URL, "status:", test.status);
   }
   for (const candidate of API_CANDIDATES) {
     const test = await probeJson(candidate);
-    if (test.ok) {
-      DEBUG && console.log("[street] Resolved LIST_URL:", candidate);
-      return candidate;
-    } else {
-      DEBUG && console.warn("[street] Probe failed", candidate, "status:", test.status);
-    }
+    if (test.ok) { DEBUG && console.log("[street] Resolved LIST_URL:", candidate); return candidate; }
+    else { DEBUG && console.warn("[street] Probe failed", candidate, "status:", test.status); }
   }
   return null;
 }
 
 async function fetchJSON(u){
   try{
-    const r = await fetch(u, {
-      headers: { "Accept": "application/json", "Cache-Control": "no-cache" },
-      cache: "no-store"
-    });
+    const r = await fetch(u, { headers:{ "Accept":"application/json","Cache-Control":"no-cache" }, cache:"no-store" });
     if (!r.ok) throw new Error(`${u} -> ${r.status}`);
     const txt = await r.text();
     try { return JSON.parse(txt); } catch { return null; }
@@ -105,9 +100,9 @@ async function fetchJSON(u){
   }
 }
 
-/* ------------------------------------------------------------ */
-/*                  Variants & attach points                    */
-/* ------------------------------------------------------------ */
+/////////////////////////////
+// Variants & attach points
+/////////////////////////////
 
 const LEG_VARIANTS = [
   "assets/leg1_default.gif",
@@ -124,52 +119,46 @@ const ATTACH_POINTS = {
 const GLOBAL_TRINKET_SCALE = 0.5;
 const TRINKET_SCALES = { default: 0.3, bag: 0.4, sling: 0.3 };
 
-/* ------------------------------------------------------------ */
-/*                        Popup behaviour                        */
-/* ------------------------------------------------------------ */
+//////////////////////
+// Popup behaviour  //
+//////////////////////
 
-const BUBBLE_LIFETIME_MS = 10000;     // show for 10s
-const BUBBLE_SHIFT = { x: 14, y: 18 }; // pixel nudge from anchor
+const BUBBLE_LIFETIME_MS = 10000;
+const BUBBLE_SHIFT = { x: 14, y: 18 };
 
-/* ------------------------------------------------------------ */
-/*                     Despawn & ground math                     */
-/* ------------------------------------------------------------ */
+/////////////////////////////
+// Despawn margin & ground //
+/////////////////////////////
 
-const DESPAWN_MARGIN = 80; // remove trinket walkers after they pass beyond edge
-const GROUND_LIFT = 150;   // push legs up from bottom
+const DESPAWN_MARGIN = 80;
+const GROUND_LIFT = 150;
 
-/* ------------------------------------------------------------ */
-/*                  DOM & background containment                 */
-/* ------------------------------------------------------------ */
+/////////////////////////////
+// DOM & background bounds //
+/////////////////////////////
 
 let bgFrame = document.getElementById("bgFrame");
 if (!bgFrame) { bgFrame = document.createElement("div"); bgFrame.id = "bgFrame"; document.body.appendChild(bgFrame); }
 let layer = document.getElementById("walkerLayer");
 if (!layer) { layer = document.createElement("div"); layer.id = "walkerLayer"; bgFrame.appendChild(layer); }
 
-let bgRect = { left: 0, top: 0, width: 0, height: 0 };
-
-/* ---- Unified size across resolutions ---- */
-let CURRENT_LEGGY_SIZE = 320; // fallback; will be computed
+let bgRect = { left:0, top:0, width:0, height:0 };
+let CURRENT_LEGGY_SIZE = 320;
 
 function computeLeggySize() {
   const h = bgRect.height || document.documentElement.clientHeight || 800;
   const s = clamp(h * 1.40, 260, 560);
   return Math.round(s);
 }
-
 function applyLeggySize() {
   CURRENT_LEGGY_SIZE = computeLeggySize();
   document.documentElement.style.setProperty('--leggy-size', `${CURRENT_LEGGY_SIZE}px`);
 }
-
-/* Ground baseline: keep everyone just above bottom uniformly */
 function groundY(size) {
-  const margin = 12; // base gap
+  const margin = 12;
   return Math.max(0, bgRect.height - size - margin - GROUND_LIFT);
 }
 
-// If you use CSS body { background-image: url(...); background-size: contain; }
 function parseBgUrl() {
   const str = getComputedStyle(document.body).backgroundImage;
   if (!str || str === "none") return null;
@@ -179,13 +168,13 @@ function parseBgUrl() {
 function computeContainRect(imgW, imgH, boxW, boxH) {
   const s = Math.min(boxW / imgW, boxH / imgH);
   const w = imgW * s, h = imgH * s;
-  return { left: (boxW - w)/2, top: (boxH - h)/2, width: w, height: h };
+  return { left:(boxW-w)/2, top:(boxH-h)/2, width:w, height:h };
 }
 function applyBgRect() {
   Object.assign(bgFrame.style, {
-    position: "fixed", overflow: "hidden", pointerEvents: "none",
-    left: `${bgRect.left}px`, top: `${bgRect.top}px`,
-    width: `${bgRect.width}px`, height: `${bgRect.height}px`,
+    position:"fixed", overflow:"hidden", pointerEvents:"none",
+    left:`${bgRect.left}px`, top:`${bgRect.top}px`,
+    width:`${bgRect.width}px`, height:`${bgRect.height}px`,
   });
 }
 async function measureBackground() {
@@ -194,24 +183,12 @@ async function measureBackground() {
   const boxH = document.documentElement.clientHeight;
   if (!url) {
     bgRect = { left:0, top:0, width:boxW, height:boxH };
-    applyBgRect();
-    applyLeggySize();
-    return;
+    applyBgRect(); applyLeggySize(); return;
   }
   await new Promise((res)=>{
     const img = new Image();
-    img.onload  = ()=>{
-      bgRect = computeContainRect(img.naturalWidth||1, img.naturalHeight||1, boxW, boxH);
-      applyBgRect();
-      applyLeggySize();
-      res();
-    };
-    img.onerror = ()=>{
-      bgRect = { left:0, top:0, width:boxW, height:boxH };
-      applyBgRect();
-      applyLeggySize();
-      res();
-    };
+    img.onload  = ()=>{ bgRect = computeContainRect(img.naturalWidth||1, img.naturalHeight||1, boxW, boxH); applyBgRect(); applyLeggySize(); res(); };
+    img.onerror = ()=>{ bgRect = { left:0, top:0, width:boxW, height:boxH }; applyBgRect(); applyLeggySize(); res(); };
     img.src = url;
   });
 }
@@ -220,9 +197,9 @@ addEventListener("resize", () => {
   window._bgR = setTimeout(measureBackground, 120);
 });
 
-/* ------------------------------------------------------------ */
-/*                             Utils                             */
-/* ------------------------------------------------------------ */
+////////////
+// Utils  //
+////////////
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const pick  = (arr)=>arr[(Math.random()*arr.length)|0];
@@ -237,9 +214,8 @@ const getRowId   = r => r?.id ?? r?._id ?? r?.uuid ?? r?.guid ?? r?.pk ?? null;
 const getRowSrc  = r => r?.image_path ?? r?.image ?? r?.src ?? r?.drawing ?? "";
 const getRowName = r => r?.trinketName ?? r?.name ?? r?.displayName ?? r?.title ?? r?.label ?? r?.filename ?? "";
 
-// --- stable key when backend id is missing ---
+// --- super-stable key: prefer id; else hash of SRC ONLY (no created_at) ---
 function hashStr(s){
-  // djb2
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i);
   return (h >>> 0).toString(36);
@@ -248,13 +224,14 @@ function deriveKeyFromRow(row){
   const id = getRowId(row);
   if (id != null) return String(id);
   const src = getRowSrc(row) || "";
-  const created = row?.created_at ?? row?.createdAt ?? "";
-  return "h_" + hashStr(src + "|" + created);
+  if (src) return "s_" + hashStr(src);
+  const name = getRowName(row) || "";
+  return name ? "n_" + hashStr(name) : null;
 }
 
-/* ------------------------------------------------------------ */
-/*                           Fade helpers                        */
-/* ------------------------------------------------------------ */
+/////////////////////
+// Fade helpers    //
+/////////////////////
 
 function raf(){ return new Promise(r => requestAnimationFrame(r)); }
 async function fadeInEl(el, ms=480){
@@ -270,69 +247,52 @@ async function fadeOutEl(el, ms=400){
   return new Promise(r => setTimeout(r, ms));
 }
 
-/* ------------------------------------------------------------ */
-/*                 Popup builder (follows walker)                */
-/* ------------------------------------------------------------ */
+/////////////////////////////////////////
+// Popup builder (follows the walker)  //
+/////////////////////////////////////////
 
 function makeNameBubble(text){
   if (!text || !String(text).trim()) return null;
 
-  const outer = document.createElement('div'); // positioned in layer coords
+  const outer = document.createElement('div');
   Object.assign(outer.style, {
-    position: 'absolute',
-    left: '0px',
-    top: '0px',
-    transform: 'translate(-9999px,-9999px)',
-    pointerEvents: 'none',
-    zIndex: '999999'
+    position:'absolute', left:'0px', top:'0px',
+    transform:'translate(-9999px,-9999px)',
+    pointerEvents:'none', zIndex:'999999'
   });
 
-  const inner = document.createElement('div'); // white box, pop-in
+  const inner = document.createElement('div');
   inner.textContent = String(text).trim();
   Object.assign(inner.style, {
-    background: '#ffffff',
-    color: '#000000',
-    padding: '6px 10px',
-    borderRadius: '10px',
-    fontFamily: 'inherit',
-    fontSize: '14px',
-    lineHeight: '1.25',
-    whiteSpace: 'nowrap',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
-    opacity: '0',
-    transform: 'scale(0.82)',
-    transition: 'opacity 260ms ease-out, transform 260ms cubic-bezier(.2,.9,.25,1.2)'
+    background:'#ffffff', color:'#000000',
+    padding:'6px 10px', borderRadius:'10px',
+    fontFamily:'inherit', fontSize:'14px', lineHeight:'1.25',
+    whiteSpace:'nowrap', boxShadow:'0 4px 12px rgba(0,0,0,0.25)',
+    opacity:'0', transform:'scale(0.82)',
+    transition:'opacity 260ms ease-out, transform 260ms cubic-bezier(.2,.9,.25,1.2)'
   });
 
   outer.appendChild(inner);
-
   outer._inner = inner;
-  outer._popIn = () => {
-    requestAnimationFrame(() => {
-      inner.style.opacity = '1';
-      inner.style.transform = 'scale(1)';
-    });
-  };
+  outer._popIn = () => { requestAnimationFrame(()=>{ inner.style.opacity='1'; inner.style.transform='scale(1)'; }); };
   outer._popOut = (ms=220) => new Promise(res=>{
     inner.style.transition = `opacity ${ms}ms ease-in, transform ${ms}ms ease-in`;
-    inner.style.opacity = '0';
-    inner.style.transform = 'scale(0.9)';
+    inner.style.opacity='0'; inner.style.transform='scale(0.9)';
     setTimeout(res, ms+20);
   });
 
   return outer;
 }
 
-/* ------------------------------------------------------------ */
-/*                       Walker registry/maps                    */
-/* ------------------------------------------------------------ */
+////////////////////////////
+// Walker registry/maps   //
+////////////////////////////
 
 const walkers = new Map(); // id -> { el, type, sourceId, bornAt, refs:{}, motion:{} }
 const emptyIds = new Set();
 const trinketIds = new Set();
 
 function genId(){ return `w_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
-
 function getWalkerCount(){ return walkers.size; }
 function getEmptyCount(){ return emptyIds.size; }
 
@@ -361,9 +321,9 @@ async function removeWalker(id, fadeMs=300){
   trinketIds.delete(id);
 }
 
-/* ------------------------------------------------------------ */
-/*               Spawn walker (trinketSrc can be null)          */
-/* ------------------------------------------------------------ */
+/////////////////////////////////////////
+// Spawn walker (trinketSrc can be null)
+/////////////////////////////////////////
 
 function spawnWalker(trinketSrc, meta = {}) {
   const { name, sourceId = null } = meta;
@@ -396,7 +356,7 @@ function spawnWalker(trinketSrc, meta = {}) {
     el.appendChild(tr);
   }
 
-  // Popup for NEW trinkets only (10s with pop-in)
+  // Popup for NEW trinkets only (10s)
   let bubble = null, bubbleKillTimer = null;
   if (type === "trinket") {
     const cleanName = (name || "").trim();
@@ -413,17 +373,14 @@ function spawnWalker(trinketSrc, meta = {}) {
     }
   }
 
-  // Unified size
   const size = CURRENT_LEGGY_SIZE;
   el.style.width = `${size}px`;
   el.style.height = `${size}px`;
 
-  // Anchors
   const ap     = ATTACH_POINTS[vKey] || ATTACH_POINTS.default;
   const baseTX = size * ap.x;
   const baseTY = size * ap.y;
 
-  // Motion
   const motion = {};
 
   if (type === "trinket") {
@@ -435,7 +392,7 @@ function spawnWalker(trinketSrc, meta = {}) {
     let vx = dir * speed;
     let vy = (Math.random()*2 - 1) * 2;
 
-    Object.assign(motion, { type, x, y, vx, vy, dir, fixed: true, size, baseTX, baseTY });
+    Object.assign(motion, { type, x, y, vx, vy, dir, fixed:true, size, baseTX, baseTY });
 
     el.style.transform = `translate(${x}px, ${y}px)`;
     leg.style.transform = `translateX(-50%) scaleX(${vx < 0 ? -1 : 1})`;
@@ -462,7 +419,6 @@ function spawnWalker(trinketSrc, meta = {}) {
   walkers.set(wid, rec);
   if (type === "empty") emptyIds.add(wid); else trinketIds.add(wid);
 
-  // Animation loop
   let last = performance.now();
   function step(t){
     const now = t || performance.now();
@@ -563,15 +519,15 @@ function spawnWalker(trinketSrc, meta = {}) {
     emptyIds.delete(wid);
     trinketIds.delete(wid);
     el.remove();
-    ensurePopulation(); // restore an empty to keep TARGET_LEGS
+    ensurePopulation();
   }
 
   return wid;
 }
 
-/* ------------------------------------------------------------ */
-/*                    Population management                      */
-/* ------------------------------------------------------------ */
+//////////////////////////////
+// Population management    //
+//////////////////////////////
 
 function ensurePopulation() {
   while (getWalkerCount() < TARGET_LEGS) {
@@ -584,9 +540,9 @@ function ensurePopulation() {
   }
 }
 
-/* ------------------------------------------------------------ */
-/*           Replace a walker with a trinket walker              */
-/* ------------------------------------------------------------ */
+/////////////////////////////////////////
+// Replace a walker with a trinket one //
+/////////////////////////////////////////
 
 async function replaceWithTrinket(trinketSrc, name, sourceId) {
   let victim = null;
@@ -601,7 +557,6 @@ async function replaceWithTrinket(trinketSrc, name, sourceId) {
   }
   spawnWalker(trinketSrc, { name, sourceId });
 
-  // de-dupe bookkeeping: mark as displayed and clear pending
   if (sourceId != null) {
     const key = String(sourceId);
     pendingTrinketIds.delete(key);
@@ -609,16 +564,17 @@ async function replaceWithTrinket(trinketSrc, name, sourceId) {
   }
 }
 
-/* ------------------------------------------------------------ */
-/*           Queue (polling/admin -> screen) & de-dupe           */
-/* ------------------------------------------------------------ */
+/////////////////////////////////////
+// Queue (polling/admin -> screen) //
+/////////////////////////////////////
 
 let seenTrinketIds = new Set();
 const pendingQueue = [];
 let processingQueue = false;
 
-const pendingTrinketIds = new Set();   // ids queued but not spawned yet
-const displayedTrinketIds = new Set(); // ids already spawned
+// De-dupe sets
+const pendingTrinketIds = new Set();   // queued but not spawned
+const displayedTrinketIds = new Set(); // already spawned
 
 function enqueueTrinket(id, name, src, force = false){
   const key = (id != null) ? String(id) : null;
@@ -651,18 +607,9 @@ function processPendingQueue(){
   processingQueue = false;
 }
 
-function idsFromRows(rows){
-  const s = new Set();
-  for (const r of rows) {
-    const key = deriveKeyFromRow(r);
-    if (key) s.add(key);
-  }
-  return s;
-}
-
-/* ------------------------------------------------------------ */
-/*                            Polling                            */
-/* ------------------------------------------------------------ */
+/////////////////
+// Polling     //
+/////////////////
 
 async function syncTrinkets(){
   if (!LIST_URL) return;
@@ -677,11 +624,15 @@ async function syncTrinkets(){
 
   if (DEBUG) { console.groupCollapsed("[street] LIST poll:", LIST_URL); console.table(rows); console.groupEnd(); }
 
-  // Enqueue any new items (use stable key)
+  // Enqueue any new items using stable key
   for (const row of rows) {
     const key = deriveKeyFromRow(row);
     if (!key) continue;
-    if (seenTrinketIds.has(key)) continue;
+
+    // NEW: skip if already pending or displayed (extra belt & suspenders)
+    if (displayedTrinketIds.has(key) || pendingTrinketIds.has(key) || seenTrinketIds.has(key)) {
+      continue;
+    }
 
     const src = getRowSrc(row);
     if (!src) continue;
@@ -717,9 +668,9 @@ async function pruneDeletedTrinkets(currentIds){
   ensurePopulation();
 }
 
-/* ------------------------------------------------------------ */
-/*            Admin command intake + localStorage fallback       */
-/* ------------------------------------------------------------ */
+//////////////////////////////////////////////
+// Admin command intake + localStorage fb   //
+//////////////////////////////////////////////
 
 function handleReplayTrinket(payload){
   if (!payload || !payload.trinket) return;
@@ -751,7 +702,7 @@ try {
   DEBUG && console.warn("[street] BroadcastChannel not supported");
 }
 
-// localStorage queue fallback
+// localStorage fallback for admin commands
 let processedCmdIds = new Set();
 
 function pullLocalQueue() {
@@ -770,11 +721,7 @@ function processLocalQueue() {
     if (DEBUG) console.log('[street] localQueue received:', cmd);
 
     if (cmd.type === 'spawn_leg') {
-      if (getWalkerCount() < TARGET_LEGS) {
-        spawnWalker(null, { name: "" });
-      } else {
-        DEBUG && console.log('[street] at capacity; ignoring spawn_leg');
-      }
+      if (getWalkerCount() < TARGET_LEGS) { spawnWalker(null, { name: "" }); }
     } else if (cmd.type === 'clear_legs') {
       (async () => {
         const ids = Array.from(walkers.keys());
@@ -794,23 +741,23 @@ window.addEventListener('storage', (e) => {
 });
 setInterval(processLocalQueue, 1000);
 
-/* ------------------------------------------------------------ */
-/*                              Boot                             */
-/* ------------------------------------------------------------ */
+//////////
+// Boot //
+//////////
 
 (async function start(){
   await measureBackground();
-  ensurePopulation(); // start with TARGET_LEGS empty walkers (immortal)
+  ensurePopulation();
 
   LIST_URL = await resolveListUrl();
   if (!LIST_URL) {
     console.error("[street] No working LIST_URL found. Set window.TRINKETS_API in street.html to the correct endpoint.");
   } else {
     DEBUG && console.log("[street] LIST_URL ready:", LIST_URL);
-    await syncTrinkets();               // first fetch
-    setInterval(syncTrinkets, POLL_MS); // keep polling
+    await syncTrinkets();
+    setInterval(syncTrinkets, POLL_MS);
   }
 
-  processQueueSoon(); // process any replays queued pre-poll
+  processQueueSoon();
   DEBUG && console.log("[street] ready; target legs:", TARGET_LEGS, "polling every", POLL_MS, "ms");
 })();

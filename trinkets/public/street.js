@@ -40,7 +40,7 @@ const API_CANDIDATES = [
 let LIST_URL = null;
 const DEBUG = true;
 const POLL_MS = 10000;
-const TARGET_LEGS = 2;
+const TARGET_LEGS = 5;
 
 ////////////////////
 // API utilities  //
@@ -614,7 +614,10 @@ function processPendingQueue(){
 async function syncTrinkets(){
   if (!LIST_URL) return;
 
-  const raw = await fetchJSON(LIST_URL);
+  // ⬇️ add cache-buster so we never get a cached JSON
+  const url = LIST_URL + (LIST_URL.includes('?') ? '&' : '?') + `_ts=${Date.now()}`;
+
+  const raw = await fetchJSON(url);
   const rows = normalizeListShape(raw);
 
   if (!Array.isArray(rows)) {
@@ -622,34 +625,25 @@ async function syncTrinkets(){
     return;
   }
 
-  if (DEBUG) { console.groupCollapsed("[street] LIST poll:", LIST_URL); console.table(rows); console.groupEnd(); }
+  if (DEBUG) { console.groupCollapsed("[street] LIST poll:", url); console.table(rows); console.groupEnd(); }
 
-  // Enqueue any new items using stable key
   for (const row of rows) {
     const key = deriveKeyFromRow(row);
     if (!key) continue;
+    if (displayedTrinketIds.has(key) || pendingTrinketIds.has(key) || seenTrinketIds.has(key)) continue;
 
-    // NEW: skip if already pending or displayed (extra belt & suspenders)
-    if (displayedTrinketIds.has(key) || pendingTrinketIds.has(key) || seenTrinketIds.has(key)) {
-      continue;
-    }
-
-    const src = getRowSrc(row);
+    const src  = getRowSrc(row);
     if (!src) continue;
 
     const name = (getRowName(row) || "").trim();
     enqueueTrinket(key, name, src);
   }
 
-  // Build currentIds with same key logic
   const currentIds = new Set(rows.map(deriveKeyFromRow).filter(Boolean));
-
-  // Prune active trinkets deleted in admin
   await pruneDeletedTrinkets(currentIds);
-
-  // Update seen to match server
   seenTrinketIds = new Set(currentIds);
 }
+
 
 async function pruneDeletedTrinkets(currentIds){
   const toRemove = [];

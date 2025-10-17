@@ -115,7 +115,7 @@ const LEG_VARIANTS = [
 const ATTACH_POINTS = {
   default: { x:  0,    y: 0.30 }, // middle of legs
   bag:     { x: -0.15, y: 0.18 }, // middle-left (bag)
-  sling:   { x: -0.05, y: 0.20 }, // middle-top (sling)
+  sling:   { x:  -0.05, y: 0.20 }, // middle-top (sling)
 };
 
 const GLOBAL_TRINKET_SCALE = 0.5;
@@ -603,7 +603,15 @@ async function replaceWithTrinket(trinketSrc, name, sourceId) {
   if (victim) {
     await removeWalker(victim, 150);
   }
+  // spawn one trinket walker
   spawnWalker(trinketSrc, { name, sourceId });
+
+  // ✅ de-dupe bookkeeping: mark as displayed and clear pending
+  if (sourceId != null) {
+    const key = String(sourceId);
+    pendingTrinketIds.delete(key);
+    displayedTrinketIds.add(key);
+  }
 }
 
 /////////////////////////////////////
@@ -614,8 +622,26 @@ let seenTrinketIds = new Set();
 const pendingQueue = [];
 let processingQueue = false;
 
-function enqueueTrinket(id, name, src){
-  pendingQueue.push({ id: id != null ? String(id) : null, name: name || "", src: src || "" });
+// ✅ New de-dupe sets
+const pendingTrinketIds = new Set();   // ids queued but not spawned yet
+const displayedTrinketIds = new Set(); // ids already spawned
+
+function enqueueTrinket(id, name, src, force = false){
+  const key = (id != null) ? String(id) : null;
+
+  // ✅ Skip if already pending or displayed (unless force=true for replays)
+  if (!force && key) {
+    if (pendingTrinketIds.has(key) || displayedTrinketIds.has(key)) {
+      if (DEBUG) console.log('[street] skip duplicate enqueue', key);
+      return;
+    }
+  }
+
+  pendingQueue.push({ id: key, name: name || "", src: src || "", force: !!force });
+
+  // track pending id
+  if (key) pendingTrinketIds.add(key);
+
   processQueueSoon();
 }
 
@@ -675,6 +701,8 @@ async function syncTrinkets(){
     if (!src) continue;
 
     const name = (getRowName(row) || "").trim();
+
+    // ✅ this enqueue is now protected by de-dupe sets
     enqueueTrinket(strId, name, src);
   }
 
@@ -710,8 +738,8 @@ async function pruneDeletedTrinkets(currentIds){
 function handleReplayTrinket(payload){
   if (!payload || !payload.trinket) return;
   const { id, name, src } = payload.trinket;
-  // Always enqueue even if we've seen this id before (replay by design)
-  enqueueTrinket(id, name, src);
+  // ✅ replay should bypass de-dupe so you can re-show old items
+  enqueueTrinket(id, name, src, /*force*/ true);
 }
 
 try {

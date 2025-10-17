@@ -38,6 +38,7 @@ body {
   height: var(--leggy-size);
   will-change: transform, opacity;
   opacity: 0; /* will fade in */
+  overflow: visible;
 }
 
 /* Subtle depth + separation */
@@ -71,7 +72,7 @@ body {
   position: absolute;
   left: calc(50% + var(--btx, 0px));  /* usually centered; can offset via --btx */
   top: var(--bty, 0px);               /* set by JS near the trinket */
-  transform: translate(-50%, -100%);  /* sit above the anchor point */
+  transform: translate(-50%, 50%);  /* sit above the anchor point */
   max-width: min(280px, calc(var(--leggy-size) * 2.2));
   padding: 10px 12px;
   border-radius: 10px;

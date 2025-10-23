@@ -6,16 +6,14 @@ if (window.__streetBooted) {
 window.__streetBooted = true;
 
 /* ============================================================= */
-/* Street: keep exactly TARGET_LEGS walkers on screen.
-   - Base "empty" legs that NEVER auto-fade (bounce within scene).
-   - On new trinket: replace an empty (or oldest) with a trinket walker.
-   - TRINKET: enters from one edge, walks straight across, exits opposite edge, despawns off-screen.
-   - Name popup shows 10s with pop-in, positioned via DOM rects.
-   - Admin controls: spawn_leg, clear_legs, replay.
-   - Prune active trinkets if admin deleted them.
-   - Background containment.
+/* Street (unlimited, no defaults, no name bubbles)
+   - Start with ZERO walkers (no base legs).
+   - Every new trinket spawns a NEW walker (no cap, no replacement).
+   - TRINKET: enters from one edge, walks straight across, despawns off-screen.
+   - Admin controls still supported (spawn_leg spawns an "empty" leg on demand; clear_legs clears; replay works).
+   - Prune active trinkets if admin deleted them from the feed.
+   - Background containment + unified sizing across resolutions.
    - Endpoint auto-discovery (or override with window.TRINKETS_API).
-   - Unified size & baseline across resolutions.
    - Robust de-dupe via stable key (id or hash of src ONLY). */
 /* ============================================================= */
 
@@ -39,8 +37,7 @@ const API_CANDIDATES = [
 
 let LIST_URL = null;
 const DEBUG = true;
-const POLL_MS = 10000;
-const TARGET_LEGS = 5;
+const POLL_MS = 10000; // how often to poll the feed
 
 ////////////////////
 // API utilities  //
@@ -104,6 +101,7 @@ async function fetchJSON(u){
 // Variants & attach points
 /////////////////////////////
 
+// Keep your asset filenames
 const LEG_VARIANTS = [
   "assets/leg1_default.gif",
   "assets/leg1_bag.gif",
@@ -118,13 +116,6 @@ const ATTACH_POINTS = {
 
 const GLOBAL_TRINKET_SCALE = 0.5;
 const TRINKET_SCALES = { default: 0.3, bag: 0.4, sling: 0.3 };
-
-//////////////////////
-// Popup behaviour  //
-//////////////////////
-
-const BUBBLE_LIFETIME_MS = 60000;
-const BUBBLE_SHIFT = { x: 14, y: 18 };
 
 /////////////////////////////
 // Despawn margin & ground //
@@ -214,7 +205,6 @@ const getRowId   = r => r?.id ?? r?._id ?? r?.uuid ?? r?.guid ?? r?.pk ?? null;
 const getRowSrc  = r => r?.image_path ?? r?.image ?? r?.src ?? r?.drawing ?? "";
 const getRowName = r => r?.trinketName ?? r?.name ?? r?.displayName ?? r?.title ?? r?.label ?? r?.filename ?? "";
 
-// --- super-stable key: prefer id; else hash of SRC ONLY (no created_at) ---
 function hashStr(s){
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i);
@@ -247,73 +237,20 @@ async function fadeOutEl(el, ms=400){
   return new Promise(r => setTimeout(r, ms));
 }
 
-/////////////////////////////////////////
-// Popup builder (follows the walker)  //
-/////////////////////////////////////////
-
-function makeNameBubble(text){
-  if (!text || !String(text).trim()) return null;
-
-  const outer = document.createElement('div');
-  Object.assign(outer.style, {
-    position:'absolute', left:'0px', top:'0px',
-    transform:'translate(-9999px,-9999px)',
-    pointerEvents:'none', zIndex:'999999'
-  });
-
-  const inner = document.createElement('div');
-  inner.textContent = String(text).trim();
-  Object.assign(inner.style, {
-    background:'#ffffff', color:'#000000',
-    padding:'6px 10px', borderRadius:'10px',
-    fontFamily:'inherit', fontSize:'14px', lineHeight:'1.25',
-    whiteSpace:'nowrap', boxShadow:'0 4px 12px rgba(0,0,0,0.25)',
-    opacity:'0', transform:'scale(0.82)',
-    transition:'opacity 260ms ease-out, transform 260ms cubic-bezier(.2,.9,.25,1.2)'
-  });
-
-  outer.appendChild(inner);
-  outer._inner = inner;
-  outer._popIn = () => { requestAnimationFrame(()=>{ inner.style.opacity='1'; inner.style.transform='scale(1)'; }); };
-  outer._popOut = (ms=220) => new Promise(res=>{
-    inner.style.transition = `opacity ${ms}ms ease-in, transform ${ms}ms ease-in`;
-    inner.style.opacity='0'; inner.style.transform='scale(0.9)';
-    setTimeout(res, ms+20);
-  });
-
-  return outer;
-}
-
 ////////////////////////////
 // Walker registry/maps   //
 ////////////////////////////
 
 const walkers = new Map(); // id -> { el, type, sourceId, bornAt, refs:{}, motion:{} }
+// Sets retained for potential tooling (not used for capacity anymore)
 const emptyIds = new Set();
 const trinketIds = new Set();
 
 function genId(){ return `w_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
-function getWalkerCount(){ return walkers.size; }
-function getEmptyCount(){ return emptyIds.size; }
-
-function oldestWalkerId(preferType=null){
-  let bestId = null, bestAge = Infinity;
-  for (const [id, rec] of walkers.entries()) {
-    if (preferType && rec.type !== preferType) continue;
-    if (rec.bornAt < bestAge) { bestAge = rec.bornAt; bestId = id; }
-  }
-  if (!bestId && preferType) {
-    for (const [id, rec] of walkers.entries()) {
-      if (rec.bornAt < bestAge) { bestAge = rec.bornAt; bestId = id; }
-    }
-  }
-  return bestId;
-}
 
 async function removeWalker(id, fadeMs=300){
   const rec = walkers.get(id);
   if (!rec) return;
-  if (rec.refs?.bubble && rec.refs.bubble.parentNode) rec.refs.bubble.remove();
   await fadeOutEl(rec.el, fadeMs);
   rec.el.remove();
   walkers.delete(id);
@@ -326,7 +263,7 @@ async function removeWalker(id, fadeMs=300){
 /////////////////////////////////////////
 
 function spawnWalker(trinketSrc, meta = {}) {
-  const { name, sourceId = null } = meta;
+  const { /* name (unused now), */ sourceId = null } = meta;
   const wid = genId();
 
   const el = document.createElement("div");
@@ -340,7 +277,7 @@ function spawnWalker(trinketSrc, meta = {}) {
   const leg = document.createElement("img");
   leg.className = "gif";
   leg.alt = "legs";
-  leg.src = `${legSrc}?cb=${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  leg.src = `${legSrc}?cb=${Date.now()}_${Math.random().toString(36).slice(2)}`; // cache-buster
   el.appendChild(leg);
 
   let type = "empty";
@@ -356,23 +293,6 @@ function spawnWalker(trinketSrc, meta = {}) {
     el.appendChild(tr);
   }
 
-  // Popup for NEW trinkets only (10s)
-  let bubble = null, bubbleKillTimer = null;
-  if (type === "trinket") {
-    const cleanName = (name || "").trim();
-    if (cleanName) {
-      bubble = makeNameBubble(cleanName);
-      if (bubble) {
-        layer.appendChild(bubble);
-        bubble._popIn();
-        bubbleKillTimer = setTimeout(async () => {
-          await bubble._popOut(200);
-          bubble.remove();
-        }, BUBBLE_LIFETIME_MS);
-      }
-    }
-  }
-
   const size = CURRENT_LEGGY_SIZE;
   el.style.width = `${size}px`;
   el.style.height = `${size}px`;
@@ -384,6 +304,7 @@ function spawnWalker(trinketSrc, meta = {}) {
   const motion = {};
 
   if (type === "trinket") {
+    // straight-line traverse, one-shot
     const fromLeft = Math.random() < 0.5;
     const y = groundY(size);
     let x = fromLeft ? (-size - DESPAWN_MARGIN) : (bgRect.width + DESPAWN_MARGIN);
@@ -402,6 +323,7 @@ function spawnWalker(trinketSrc, meta = {}) {
       tr.style.setProperty("--ty", `${baseTY}px`);
     }
   } else {
+    // "empty" walkers bounce inside bounds — only when manually spawned via admin
     let x = Math.random() * Math.max(0, bgRect.width - size);
     let y = groundY(size) + randBetween(-4, 4);
     let dir = Math.random() < 0.5 ? 1 : -1;
@@ -415,7 +337,7 @@ function spawnWalker(trinketSrc, meta = {}) {
 
   fadeInEl(el, 480);
 
-  const rec = { el, type, sourceId, bornAt: performance.now(), refs: { leg, tr, bubble }, motion };
+  const rec = { el, type, sourceId, bornAt: performance.now(), refs: { leg, tr }, motion };
   walkers.set(wid, rec);
   if (type === "empty") emptyIds.add(wid); else trinketIds.add(wid);
 
@@ -425,7 +347,7 @@ function spawnWalker(trinketSrc, meta = {}) {
     const dt  = Math.min(0.05, (now - last)/1000);
     last = now;
 
-    const { leg, tr, bubble } = rec.refs;
+    const { leg, tr } = rec.refs;
 
     if (rec.type === "trinket") {
       motion.x += motion.vx * dt;
@@ -444,22 +366,12 @@ function spawnWalker(trinketSrc, meta = {}) {
 
       el.style.transform = `translate(${motion.x}px, ${motion.y}px)`;
 
-      if (bubble) {
-        const anchorEl = tr || leg;
-        const aRect = anchorEl.getBoundingClientRect();
-        const lRect = layer.getBoundingClientRect();
-        const anchorX = aRect.left + aRect.width / 2;
-        const anchorY = aRect.top;
-        const side = motion.vx < 0 ? -1 : 1;
-        const bx = (anchorX - lRect.left) + side * BUBBLE_SHIFT.x;
-        const by = (anchorY - lRect.top) - BUBBLE_SHIFT.y;
-        bubble.style.transform = `translate(${Math.round(bx)}px, ${Math.round(by)}px)`;
-      }
-
+      // offscreen cleanup
       if (motion.vx > 0 && motion.x > bgRect.width + DESPAWN_MARGIN) { cleanupTrinket(); return; }
       if (motion.vx < 0 && motion.x < -motion.size - DESPAWN_MARGIN) { cleanupTrinket(); return; }
 
     } else {
+      // empty walker (manual admin only) — bounce inside frame
       if (now >= motion.nextSpeedChange) {
         if (Math.random() < 0.20) motion.dir *= -1;
         motion.speed = randBetween(14, 32);
@@ -489,18 +401,6 @@ function spawnWalker(trinketSrc, meta = {}) {
       if (motion.y > gy) { motion.y = gy; if (motion.vy > 0) motion.vy = -Math.abs(motion.vy); }
 
       el.style.transform = `translate(${motion.x}px, ${motion.y}px)`;
-
-      if (bubble) {
-        const anchorEl = tr || leg;
-        const aRect = anchorEl.getBoundingClientRect();
-        const lRect = layer.getBoundingClientRect();
-        const anchorX = aRect.left + aRect.width / 2;
-        const anchorY = aRect.top;
-        const side = motion.vx < 0 ? -1 : 1;
-        const bx = (anchorX - lRect.left) + side * BUBBLE_SHIFT.x;
-        const by = (anchorY - lRect.top) - BUBBLE_SHIFT.y;
-        bubble.style.transform = `translate(${Math.round(bx)}px, ${Math.round(by)}px)`;
-      }
     }
 
     requestAnimationFrame(step);
@@ -508,55 +408,25 @@ function spawnWalker(trinketSrc, meta = {}) {
   requestAnimationFrame(step);
 
   async function cleanupTrinket(){
-    if (bubbleKillTimer) { clearTimeout(bubbleKillTimer); }
-    if (rec.refs.bubble && rec.refs.bubble.parentNode) {
-      try { await rec.refs.bubble._popOut(160); } catch {}
-      rec.refs.bubble.remove();
-    }
     await fadeOutEl(rec.el, 300);
     if (!walkers.has(wid)) return;
     walkers.delete(wid);
     emptyIds.delete(wid);
     trinketIds.delete(wid);
     el.remove();
-    ensurePopulation();
+    // No repopulation (we removed defaults and the cap)
   }
 
   return wid;
 }
 
 //////////////////////////////
-// Population management    //
+// Trinket spawn (no replace)
 //////////////////////////////
 
-function ensurePopulation() {
-  while (getWalkerCount() < TARGET_LEGS) {
-    spawnWalker(null, { name: "" });
-  }
-  while (getWalkerCount() > TARGET_LEGS) {
-    const victim = oldestWalkerId('empty') || oldestWalkerId(null);
-    if (!victim) break;
-    removeWalker(victim, 200);
-  }
-}
-
-/////////////////////////////////////////
-// Replace a walker with a trinket one //
-/////////////////////////////////////////
-
-async function replaceWithTrinket(trinketSrc, name, sourceId) {
-  let victim = null;
-  if (getEmptyCount() > 0) {
-    victim = oldestWalkerId('empty');
-  }
-  if (!victim) {
-    victim = oldestWalkerId(null);
-  }
-  if (victim) {
-    await removeWalker(victim, 150);
-  }
-  spawnWalker(trinketSrc, { name, sourceId });
-
+function spawnTrinket(trinketSrc, sourceId) {
+  // No replacement: just add another walker to the scene
+  spawnWalker(trinketSrc, { sourceId });
   if (sourceId != null) {
     const key = String(sourceId);
     pendingTrinketIds.delete(key);
@@ -572,7 +442,6 @@ let seenTrinketIds = new Set();
 const pendingQueue = [];
 let processingQueue = false;
 
-// De-dupe sets
 const pendingTrinketIds = new Set();   // queued but not spawned
 const displayedTrinketIds = new Set(); // already spawned
 
@@ -584,6 +453,7 @@ function enqueueTrinket(id, name, src, force = false){
       return;
     }
   }
+  // name ignored now (no bubble), but we keep the signature
   pendingQueue.push({ id: key, name: name || "", src: src || "", force: !!force });
   if (key) pendingTrinketIds.add(key);
   processQueueSoon();
@@ -599,10 +469,10 @@ function processPendingQueue(){
   let delay = 0;
   const staggerStep = 200 + Math.random() * 150;
   while (pendingQueue.length) {
-    const { id, name, src } = pendingQueue.shift();
+    const { id, src } = pendingQueue.shift();
     const normSrc = normalizeSrc(src);
     delay += staggerStep;
-    setTimeout(() => replaceWithTrinket(normSrc, (name||"").trim(), id), delay);
+    setTimeout(() => spawnTrinket(normSrc, "", id), delay);
   }
   processingQueue = false;
 }
@@ -614,7 +484,6 @@ function processPendingQueue(){
 async function syncTrinkets(){
   if (!LIST_URL) return;
 
-  // ⬇️ add cache-buster so we never get a cached JSON
   const url = LIST_URL + (LIST_URL.includes('?') ? '&' : '?') + `_ts=${Date.now()}`;
 
   const raw = await fetchJSON(url);
@@ -635,15 +504,15 @@ async function syncTrinkets(){
     const src  = getRowSrc(row);
     if (!src) continue;
 
-    const name = (getRowName(row) || "").trim();
-    enqueueTrinket(key, name, src);
+    // name ignored; we still accept it from feed for compatibility
+    enqueueTrinket(key, getRowName(row) || "", src);
   }
 
+  // prune if the admin/feed removed a trinket that is currently on-screen
   const currentIds = new Set(rows.map(deriveKeyFromRow).filter(Boolean));
   await pruneDeletedTrinkets(currentIds);
   seenTrinketIds = new Set(currentIds);
 }
-
 
 async function pruneDeletedTrinkets(currentIds){
   const toRemove = [];
@@ -659,7 +528,7 @@ async function pruneDeletedTrinkets(currentIds){
   for (const wid of toRemove) {
     await removeWalker(wid, 200);
   }
-  ensurePopulation();
+  // No repopulation (defaults removed)
 }
 
 //////////////////////////////////////////////
@@ -668,8 +537,8 @@ async function pruneDeletedTrinkets(currentIds){
 
 function handleReplayTrinket(payload){
   if (!payload || !payload.trinket) return;
-  const { id, name, src } = payload.trinket;
-  enqueueTrinket(id, name, src, /*force*/ true);
+  const { id, src } = payload.trinket;
+  enqueueTrinket(id, "", src, /*force*/ true);
 }
 
 try {
@@ -678,15 +547,12 @@ try {
     const msg = ev.data || {};
     if (DEBUG) console.log('[street] BC received:', msg);
     if (msg.type === 'spawn_leg') {
-      if (getWalkerCount() < TARGET_LEGS) {
-        spawnWalker(null, { name: "" });
-      } else {
-        DEBUG && console.log('[street] at capacity; ignoring spawn_leg');
-      }
+      // No cap — if you use this, it will add an "empty" walker (manual only)
+      spawnWalker(null, {});
     } else if (msg.type === 'clear_legs') {
       const ids = Array.from(walkers.keys());
       for (const id of ids) await removeWalker(id, 150);
-      ensurePopulation();
+      // No repopulate
     } else if (msg.type === 'replay_trinket') {
       handleReplayTrinket(msg);
     }
@@ -715,12 +581,11 @@ function processLocalQueue() {
     if (DEBUG) console.log('[street] localQueue received:', cmd);
 
     if (cmd.type === 'spawn_leg') {
-      if (getWalkerCount() < TARGET_LEGS) { spawnWalker(null, { name: "" }); }
+      spawnWalker(null, {});
     } else if (cmd.type === 'clear_legs') {
       (async () => {
         const ids = Array.from(walkers.keys());
         for (const id of ids) await removeWalker(id, 150);
-        ensurePopulation();
       })();
     } else if (cmd.type === 'replay_trinket') {
       handleReplayTrinket(cmd);
@@ -741,7 +606,6 @@ setInterval(processLocalQueue, 1000);
 
 (async function start(){
   await measureBackground();
-  ensurePopulation();
 
   LIST_URL = await resolveListUrl();
   if (!LIST_URL) {
@@ -753,5 +617,5 @@ setInterval(processLocalQueue, 1000);
   }
 
   processQueueSoon();
-  DEBUG && console.log("[street] ready; target legs:", TARGET_LEGS, "polling every", POLL_MS, "ms");
+  DEBUG && console.log("[street] ready; unlimited walkers, no defaults, no name bubbles; polling every", POLL_MS, "ms");
 })();

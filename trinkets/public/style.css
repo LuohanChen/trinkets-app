@@ -15,12 +15,12 @@ body { background: #9fc4da; overflow: hidden; }
 
 .float-img {
   position: absolute; top: 0; left: 0;
-  width: 240px; height: 240px;      /* fallback; JS will override */
+  width: 240px; height: 240px;
   object-fit: cover; border-radius: 8px;
   filter: drop-shadow(0 6px 16px rgba(0,0,0,.15));
   transform: translateX(110vw);
-  opacity: 0;                        /* start hidden */
-  transition: opacity 900ms ease;    /* smoother fade-in */
+  opacity: 0;
+  transition: opacity 900ms ease;
 }
 .float-img.visible { opacity: 1; }
 
@@ -37,7 +37,6 @@ body { background: #9fc4da; overflow: hidden; }
   text-align: center; padding: 24px;
 }
 
-/* Use CSS var for fade duration so JS can tweak per element */
 .start-title,
 #sequence,
 #finalPrompt {
@@ -67,7 +66,6 @@ body { background: #9fc4da; overflow: hidden; }
 
 .sequence .stories-of { opacity: .75; font-weight: 300; }
 
-/* Typewriter word */
 .stories-word {
   font-weight: 600;
   margin-left: .35em;
@@ -79,124 +77,220 @@ body { background: #9fc4da; overflow: hidden; }
 
 /* ===================== Studio ===================== */
 .studio {
-  height: 100vh;                      /* fill viewport */
-  padding: clamp(20px, 5vw, 48px);
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   background: rgb(159,196,218);
   color: #111;
-  overflow: hidden;                   /* avoid page scrollbars */
+  overflow: hidden;
 }
 
 .studio-inner {
-  height: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;                      /* header + grid */
+  display: flex;
   flex-direction: column;
-  min-height: 0;                      /* allow children to grow */
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 .studio-header {
-  display: flex; align-items: baseline; gap: 8px;
-  margin-bottom: 10px;
-  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
 }
-.studio-header h2, .studio-header h3 { margin: 0; padding: 0; background-color: white; }
-.studio-header h2 { font-weight: 300; font-size: clamp(28px, 4.8vw, 44px); padding-left: 1%; }
-.studio-header h3 { font-weight: 600; font-size: clamp(28px, 4.8vw, 44px); padding-right: 1%; }
+.studio-header h2, .studio-header h3 {
+  margin: 0; padding: 0; background-color: white;
+}
+.studio-header h2 {
+  font-weight: 300;
+  font-size: clamp(28px, 4.8vw, 44px);
+  padding-left: 1%;
+}
+.studio-header h3 {
+  font-weight: 600;
+  font-size: clamp(28px, 4.8vw, 44px);
+  padding-right: 1%;
+}
 
-/* Grid fills remaining height */
+/* Center the entire drawing section */
 .studio-grid {
-  flex: 1 1 auto;
-  min-height: 0;                      /* IMPORTANT */
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
-  gap: clamp(12px, 3vw, 28px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
 }
 
-.canvas-col, .text-col { min-height: 0; }
-.canvas-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.canvas-label { font-size: 14px; font-weight: 500; color: #111; margin-left: 4px; }
-
-/* Canvas wrapper fills column */
-.canvas-wrap {
-  flex: 1 1 auto;
-  min-height: 0;                      /* IMPORTANT */
-  display: flex;                      /* canvas on top, tools below */
+.canvas-col {
+  display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  max-width: 700px;
+  width: 100%;
+}
+
+.canvas-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #111;
+  margin-bottom: 8px;
+}
+
+/* Centered canvas area */
+.canvas-wrap {
+  width: 100%;
+  max-width: 600px;
+  aspect-ratio: 1 / 1;
   background: #f4f6f8;
   border-radius: 12px;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   padding: 12px;
 }
 
-/* Konva mount stretches fully */
+/* Konva stage */
 #konvaStage {
-  flex: 1 1 auto;
-  min-height: 0;                      /* IMPORTANT */
+  width: 100%;
+  height: 100%;
   border-radius: 10px;
-  overflow: hidden;
   background: #fff;
   box-shadow: 0 6px 16px rgba(0,0,0,.08);
 }
 
-/* Tools sit under the canvas */
+/* Tool bar */
 .tools {
-  flex: 0 0 auto;
-  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.tools label{
-  display: inline-flex; gap: 8px; align-items: center; padding: 6px 10px;
-  background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+.tools label {
+  display: inline-flex; gap: 8px; align-items: center;
+  padding: 6px 10px; background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
-.tools button{
-  appearance: none; border: 0; padding: 8px 14px; border-radius: 999px;
-  background: #111; color: #fff; cursor: pointer;
+.tools button {
+  appearance: none;
+  border: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
   transition: transform 160ms cubic-bezier(.2,.7,.2,1);
 }
-.tools button:hover{ transform: translateY(-1px); }
+.tools button:hover { transform: translateY(-1px); }
 
-.text-col {
-  display: flex; flex-direction: column; gap: 16px;
-  overflow: auto;                     /* scroll text column if very small screens */
-}
-
+/* Input fields */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field span { font-size: 14px; opacity: .7; }
 
-#trinketName {
-  width: 60%; max-width: 320px; padding: 8px 12px;
-  border: 1px solid rgba(0,0,0,.12); border-radius: 8px;
-  font-family: "Bitter", serif; font-size: 16px; line-height: 1.4; outline: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,.04) inset;
-}
-#trinketName:focus { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.08); }
-
-#trinketText {
-  width: 100%; min-height: 180px; resize: vertical; padding: 12px 14px;
-  border: 1px solid rgba(0,0,0,.12); border-radius: 10px;
-  font-family: "Bitter", serif; font-size: 16px; outline: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,.04) inset;
-}
-#trinketText:focus { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.08); }
-
-.submit-btn {
-  align-self: center; margin-top: 4px; padding: 14px 28px; border-radius: 999px;
-  background: #0077ff; color: #fff; font-size: 18px; font-family: "Bitter", serif;
-  border: 0; cursor: pointer; box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+.submit-btn, .clear-btn {
+  background: #0077ff;
+  color: #fff;
+  font-size: 18px;
+  font-family: "Bitter", serif;
+  border: 0;
+  cursor: pointer;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.15);
   transition: transform 160ms cubic-bezier(.2,.7,.2,1), background 160ms;
 }
-.submit-btn:hover { transform: translateY(-2px); background: #005bcc; }
+.submit-btn:hover, .clear-btn:hover {
+  transform: translateY(-2px);
+  background: #83b2eb;
+}
 
-/* Responsive */
-@media (max-width: 980px){
-  .studio { height: auto; min-height: 100vh; }
-  .studio-inner { height: auto; }
-  .studio-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
+/* Custom cursor */
+#konvaStage, #konvaStage * { cursor: none !important; }
+.cursor-ring.hidden { display: none !important; }
+.tools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Base look for icon buttons */
+.tool-btn{
+  appearance:none;
+  border:0;
+  padding:10px 14px;
+  border-radius:999px;
+  background:#111;       /* default black */
+  color:#fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.15);
+  cursor:pointer;
+  transition:transform .16s cubic-bezier(.2,.7,.2,1), background .16s;
+}
+.tool-btn:hover{ transform: translateY(-2px); }
+
+/* Highlight the active tool (blue) */
+.tool-btn.active-tool{
+  background:#0077ff;    /* <- active color */
+}
+
+/* Keep “Clear” & “Submit” using your existing styles */
+.tool-btn i {
+  pointer-events: none;
+}
+
+/* Circular custom cursor */
+.cursor-ring {
+  position: fixed;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.cursor-ring.hidden {
+  display: none;
+}
+.cursor-ring i {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  color: #000;
+  font-size: 14px;
+  opacity: 0.3;
+}
+
+
+/* Responsive: stay centered even on mobile */
+@media (max-width: 980px) {
+  .studio {
+    height: 100vh;
+    padding: 24px 12px;
   }
-  /* Give the canvas a reasonable height on small screens */
-  #konvaStage { height: min(60vh, 520px); }
-  #trinketText { height: 200px; }
+  .studio-header {
+    flex-direction: row;
+    justify-content: center;
+  }
+  .studio-grid {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: auto;
+  }
+  .canvas-wrap {
+    max-width: 90vw;
+    aspect-ratio: 1 / 1;
+  }
+  .tools {
+    justify-content: center;
+  }
 }

@@ -15,37 +15,32 @@
   <!-- Konva -->
   <script src="https://unpkg.com/konva@9/konva.min.js"></script>
 
-  <!-- App -->
-
   <script>
-  // Point everything to same-origin API on Render
-  window.API_BASE = ""; // empty = same origin
-  window.TRINKETS_API = (window.API_BASE || "") + "/trinkets.json";
-</script>
+    // Point everything to same-origin API on Render
+    window.API_BASE = ""; // empty = same origin
+    window.TRINKETS_API = (window.API_BASE || "") + "/trinkets.json";
+  </script>
 
   <script src="script.js" defer></script>
+
+  <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/uicons-regular-rounded/css/uicons-regular-rounded.css">
+<link rel="stylesheet" href="https://cdn-uicons.flaticon.com/uicons-regular-straight/css/uicons-regular-straight.css">
+<link rel="stylesheet" href="https://cdn-uicons.flaticon.com/uicons-regular-classic/css/uicons-regular-classic.css">
+
 </head>
 <body>
   <!-- Start / Loading screen -->
   <section id="loading" class="loading-screen" aria-live="polite">
-    <!-- Floating pictures layer (created/managed by JS) -->
     <div id="floatLayer" class="float-layer" aria-hidden="true"></div>
-
-    <!-- Centered text + controls -->
     <div class="start-wrap">
-      <h1 id="startTitle" class="start-title">
-        Everyday, we carry stories of ourselves
-      </h1>
-
+      <h1 id="startTitle" class="start-title">Everyday, we carry stories of ourselves</h1>
       <div id="sequence" class="sequence hidden" aria-hidden="true">
         <h1 class="start-title">
           <span class="stories-of">Stories of:</span>
           <span id="storiesWord" class="stories-word"></span>
         </h1>
       </div>
-
       <h1 id="finalPrompt" class="start-title hidden">What’s your story?</h1>
-
       <button id="startBtn" class="start-btn" type="button" aria-label="Start">Start</button>
       <p class="start-hint">Press anything, anywhere else to skip.</p>
     </div>
@@ -60,34 +55,31 @@
       </div>
 
       <div class="studio-grid">
-        <!-- Drawing -->
         <div class="canvas-col">
           <label class="canvas-label">Draw your Trinket</label>
-          <div class="canvas-wrap">
-            <div id="konvaStage" class="konva-stage"></div>
-            <div class="tools">
-              <label>
-                Brush
-                <input type="color" id="brushColor" value="#111111">
-              </label>
-              <label>
-                Size
-                <input type="range" id="brushSize" min="1" max="48" value="6">
-              </label>
-              <button id="clearCanvas" type="button">Clear</button>
-              <button id="savePNG" type="button">Download PNG</button>
-            </div>
-          </div>
-        </div>
+<div class="canvas-wrap">
+  <div id="konvaStage" class="konva-stage"></div>
+  <div class="tools">
+    <!-- Icon tool selectors (replace text labels) -->
+    <button id="toolBrush" class="tool-btn active-tool" title="Brush">
+      <i class="fi fi-rs-paint-brush"></i>
+    </button>
+    <button id="toolBucket" class="tool-btn" title="Paint Bucket">
+      <i class="fi fi-rr-fill"></i>
+    </button>
+    <button id="toolEraser" class="tool-btn" title="Eraser">
+      <i class="fi fi-rc-eraser"></i>
+    </button>
 
-        <!-- Text -->
-        <div class="text-col">
-          <label class="field">
-            <span>What is your Trinket's Name?</span>
-            <input id="trinketName" type="text" placeholder="Enter a name..." />
-          </label>
+    <!-- Color + size controls -->
+    <input type="color" id="brushColor" value="#111111" />
+    <input type="range" id="brushSize" min="1" max="48" value="6" />
 
-          <button id="submitTrinket" type="button" class="submit-btn">Submit</button>
+    <!-- Utility buttons -->
+    <button id="clearCanvas" class="clear-btn" type="button">Clear</button>
+    <button id="submitTrinket" class="submit-btn" type="button">Submit</button>
+  </div>
+</div>
         </div>
       </div>
     </div>

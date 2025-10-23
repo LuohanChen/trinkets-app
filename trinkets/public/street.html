@@ -14,17 +14,15 @@
   <link rel="stylesheet" href="street.css"/>
 </head>
 <body>
-  <!-- Street background is handled via CSS on <body> -->
-  <!-- Floating trinkets container -->
+  <!-- Background image handled by CSS on <body> -->
+  <!-- Clipping frame + walker layer are created by JS -->
   <div id="floatLayer" aria-hidden="true"></div>
 
-  <!-- App -->
-
   <script>
-  // Because server serves /trinkets(.json) on the same origin:
-  window.TRINKETS_API = "/trinkets.json";
-</script>
-<script src="street.js" defer></script>
+    // The server serves a flat array of trinkets at this path.
+    // You can override per-environment if needed.
+    window.TRINKETS_API = "/trinkets.json";
+  </script>
   <script type="module" src="street.js"></script>
 </body>
 </html>

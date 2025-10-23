@@ -6,19 +6,21 @@ if (window.__streetBooted) {
 window.__streetBooted = true;
 
 /* ============================================================= */
-/* Street (unlimited, no defaults, no name bubbles)
+/* Street (unlimited, no defaults, no name bubbles, optimized)
    - Start with ZERO walkers (no base legs).
    - Every new trinket spawns a NEW walker (no cap, no replacement).
    - TRINKET: enters from one edge, walks straight across, despawns off-screen.
-   - Admin controls supported:
+   - Admin controls:
        • spawn_leg -> adds an "empty" leg (manual only)
        • clear_legs -> removes all walkers
-       • replay_trinket -> spawns a trinket walker once (de-duped)
+       • replay_trinket -> de-duped by id/src-hash
        • delete_trinket -> remove matching walker(s) immediately
-   - Prune active trinkets if admin deleted them from the feed.
-   - Background containment + unified sizing across resolutions.
-   - Endpoint auto-discovery (or override with window.TRINKETS_API).
-   - Robust de-dupe via stable key (id or hash of src ONLY). */
+   - Poll feed; prune walkers whose source id disappeared.
+   - Performance:
+       • Single global ticker at ~30 fps
+       • translate3d, will-change, contain
+       • async decoding; no cache-busters on leg GIFs
+*/
 /* ============================================================= */
 
 //////////////////////////
@@ -41,7 +43,7 @@ const API_CANDIDATES = [
 
 let LIST_URL = null;
 const DEBUG = true;
-const POLL_MS = 10000; // how often to poll the feed
+const POLL_MS = 10000; // poll the feed every 10s
 
 ////////////////////
 // API utilities  //
@@ -244,9 +246,9 @@ async function fadeOutEl(el, ms=400){
 // Walker registry/maps   //
 ////////////////////////////
 
-const walkers = new Map(); // id -> { el, type, sourceId, bornAt, refs:{}, motion:{} }
-const emptyIds = new Set();   // kept for admin manual spawns
-const trinketIds = new Set(); // kept for debugging/metrics
+const walkers = new Map(); // id -> { el, type, sourceId, bornAt, refs:{}, motion:{}, _cleanup:fn }
+const emptyIds = new Set();   // manual/admin
+const trinketIds = new Set(); // debug/metrics
 
 function genId(){ return `w_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
 
@@ -271,6 +273,11 @@ function spawnWalker(trinketSrc, meta = {}) {
   const el = document.createElement("div");
   el.className = "walker";
   el.dataset.walkerId = wid;
+  // Perf hints
+  Object.assign(el.style, {
+    willChange: 'transform, opacity',
+    contain: 'layout paint size'
+  });
   layer.appendChild(el);
 
   const legSrc = pick(LEG_VARIANTS);
@@ -279,7 +286,9 @@ function spawnWalker(trinketSrc, meta = {}) {
   const leg = document.createElement("img");
   leg.className = "gif";
   leg.alt = "legs";
-  leg.src = `${legSrc}?cb=${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  leg.decoding = "async";
+  leg.setAttribute("fetchpriority", "low");
+  leg.src = legSrc; // no cache-buster for legs (reuse decoder)
   el.appendChild(leg);
 
   let type = "empty";
@@ -289,7 +298,9 @@ function spawnWalker(trinketSrc, meta = {}) {
     tr = document.createElement("img");
     tr.className = "trinket";
     tr.alt = "trinket";
-    tr.src = normalizeSrc(trinketSrc);
+    tr.decoding = "async";
+    tr.setAttribute("fetchpriority", "low");
+    tr.src = normalizeSrc(trinketSrc); // keep if you need cache-buster for dynamic URLs
     const scale = (TRINKET_SCALES[vKey] ?? 1) * GLOBAL_TRINKET_SCALE;
     tr.style.setProperty("--scale", scale);
     el.appendChild(tr);
@@ -306,17 +317,17 @@ function spawnWalker(trinketSrc, meta = {}) {
   const motion = {};
 
   if (type === "trinket") {
+    // straight-line traverse, one-shot
     const fromLeft = Math.random() < 0.5;
     const y = groundY(size);
     let x = fromLeft ? (-size - DESPAWN_MARGIN) : (bgRect.width + DESPAWN_MARGIN);
     const dir = fromLeft ? 1 : -1;
     const speed = randBetween(22, 42);
     let vx = dir * speed;
-    let vy = (Math.random()*2 - 1) * 2;
 
-    Object.assign(motion, { type, x, y, vx, vy, dir, fixed:true, size, baseTX, baseTY });
+    Object.assign(motion, { type, x, y, vx, vy: 0, dir, fixed:true, size, baseTX, baseTY });
 
-    el.style.transform = `translate(${x}px, ${y}px)`;
+    el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     leg.style.transform = `translateX(-50%) scaleX(${vx < 0 ? -1 : 1})`;
     if (tr) {
       const tx = (vx < 0 ? -baseTX : baseTX);
@@ -324,98 +335,32 @@ function spawnWalker(trinketSrc, meta = {}) {
       tr.style.setProperty("--ty", `${baseTY}px`);
     }
   } else {
-    // "empty" (manual admin) – bounce within frame
+    // "empty" walkers bounce in X (manual admin only)
     let x = Math.random() * Math.max(0, bgRect.width - size);
-    let y = groundY(size) + randBetween(-4, 4);
+    let y = groundY(size);
     let dir = Math.random() < 0.5 ? 1 : -1;
-    let speed = randBetween(14, 32);
+    let speed = randBetween(14, 28);
     let vx = dir * speed;
-    let vy = (Math.random()*2 - 1) * 4;
-
-    let nextSpeedChange = performance.now() + randBetween(2000, 6000);
-    Object.assign(motion, { type, x, y, vx, vy, dir, speed, nextSpeedChange, size, baseTX, baseTY });
+    let nextSpeedChange = performance.now() + randBetween(2200, 5200);
+    Object.assign(motion, { type, x, y, vx, vy: 0, dir, speed, nextSpeedChange, size, baseTX, baseTY });
+    el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
   }
 
-  fadeInEl(el, 480);
+  fadeInEl(el, 360);
 
-  const rec = { el, type, sourceId, bornAt: performance.now(), refs: { leg, tr }, motion };
+  const rec = { el, type, sourceId, bornAt: performance.now(), refs: { leg, tr }, motion, _cleanup: null };
   walkers.set(wid, rec);
   if (type === "empty") emptyIds.add(wid); else trinketIds.add(wid);
 
-  let last = performance.now();
-  function step(t){
-    const now = t || performance.now();
-    const dt  = Math.min(0.05, (now - last)/1000);
-    last = now;
-
-    const { leg, tr } = rec.refs;
-
-    if (rec.type === "trinket") {
-      motion.x += motion.vx * dt;
-      motion.y = groundY(motion.size);
-
-      motion.vy += (Math.random()*2 - 1) * 1.4 * dt;
-      motion.vy *= 0.985;
-
-      leg.style.transform = `translateX(-50%) scaleX(${motion.vx < 0 ? -1 : 1})`;
-      if (tr) {
-        const tx = (motion.vx < 0 ? -motion.baseTX : motion.baseTX);
-        const ty = motion.baseTY;
-        tr.style.setProperty("--tx", `${tx}px`);
-        tr.style.setProperty("--ty", `${ty}px`);
-      }
-
-      el.style.transform = `translate(${motion.x}px, ${motion.y}px)`;
-
-      // offscreen cleanup
-      if (motion.vx > 0 && motion.x > bgRect.width + DESPAWN_MARGIN) { cleanupTrinket(); return; }
-      if (motion.vx < 0 && motion.x < -motion.size - DESPAWN_MARGIN) { cleanupTrinket(); return; }
-
-    } else {
-      // empty walker (manual admin only) — bounce inside frame
-      if (now >= motion.nextSpeedChange) {
-        if (Math.random() < 0.20) motion.dir *= -1;
-        motion.speed = randBetween(14, 32);
-        motion.nextSpeedChange = now + randBetween(2000, 6000);
-      }
-      const targetVx = motion.dir * motion.speed;
-      motion.vx += (targetVx - motion.vx) * Math.min(1, 0.8 * dt * 10);
-
-      motion.x += motion.vx * dt;
-      motion.y += motion.vy * dt;
-
-      motion.vy += (Math.random()*2 - 1) * 2 * dt;
-      motion.vy *= 0.98;
-
-      leg.style.transform = `translateX(-50%) scaleX(${motion.vx < 0 ? -1 : 1})`;
-      if (tr) {
-        const tx = (motion.vx < 0 ? -motion.baseTX : motion.baseTX);
-        const ty = motion.baseTY;
-        tr.style.setProperty("--tx", `${tx}px`);
-        tr.style.setProperty("--ty", `${ty}px`);
-      }
-
-      if (motion.x <= 0) { motion.x = 0; motion.dir = 1; motion.vx = Math.abs(motion.vx); }
-      if (motion.x >= bgRect.width - motion.size) { motion.x = bgRect.width - motion.size; motion.dir = -1; motion.vx = -Math.abs(motion.vx); }
-      const gy = groundY(motion.size);
-      if (motion.y < gy) { motion.y = gy; if (motion.vy < 0) motion.vy = Math.abs(motion.vy); }
-      if (motion.y > gy) { motion.y = gy; if (motion.vy > 0) motion.vy = -Math.abs(motion.vy); }
-
-      el.style.transform = `translate(${motion.x}px, ${motion.y}px)`;
-    }
-
-    requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
-
   async function cleanupTrinket(){
-    await fadeOutEl(rec.el, 300);
+    await fadeOutEl(rec.el, 260);
     if (!walkers.has(wid)) return;
     walkers.delete(wid);
     emptyIds.delete(wid);
     trinketIds.delete(wid);
     el.remove();
   }
+  rec._cleanup = cleanupTrinket;
 
   return wid;
 }
@@ -471,7 +416,7 @@ function processPendingQueue(){
     const { id, src } = pendingQueue.shift();
     const normSrc = normalizeSrc(src);
     delay += staggerStep;
-    // ✅ Correct: pass the id as sourceId (second arg)
+    // Pass id as sourceId (2nd arg)
     setTimeout(() => spawnTrinket(normSrc, id), delay);
   }
   processingQueue = false;
@@ -574,7 +519,7 @@ try {
     const msg = ev.data || {};
     if (DEBUG) console.log('[street] BC received:', msg);
     if (msg.type === 'spawn_leg') {
-      // No cap — if you use this, it will add an "empty" walker (manual only)
+      // add an "empty" walker (manual only)
       spawnWalker(null, {});
     } else if (msg.type === 'clear_legs') {
       const ids = Array.from(walkers.keys());
@@ -657,16 +602,103 @@ window.addEventListener('storage', (e) => {
 });
 setInterval(processLocalQueue, 1000);
 
+/////////////////////////////
+// Global walker updater   //
+/////////////////////////////
+
+const TARGET_FPS = 30;
+let FRAME_MS = 1000 / TARGET_FPS;
+let lastFrameTime = performance.now();
+
+function updateWalker(rec, dt) {
+  const { el, refs: { leg, tr }, motion } = rec;
+
+  if (rec.type === 'trinket') {
+    motion.x += motion.vx * dt;
+    motion.y = groundY(motion.size);
+
+    // tiny jitter decay (very light)
+    // motion.vy not used for vertical movement now (keeps ground-locked)
+
+    leg.style.transform = `translateX(-50%) scaleX(${motion.vx < 0 ? -1 : 1})`;
+    if (tr) {
+      const tx = (motion.vx < 0 ? -motion.baseTX : motion.baseTX);
+      tr.style.setProperty("--tx", `${tx}px`);
+      tr.style.setProperty("--ty", `${motion.baseTY}px`);
+    }
+
+    el.style.transform = `translate3d(${motion.x}px, ${motion.y}px, 0)`;
+
+    // offscreen cleanup
+    if (motion.vx > 0 && motion.x > bgRect.width + DESPAWN_MARGIN) { rec._cleanup?.(); return; }
+    if (motion.vx < 0 && motion.x < -motion.size - DESPAWN_MARGIN) { rec._cleanup?.(); return; }
+
+  } else {
+    // empty walker (bounce X only)
+    const now = performance.now();
+    if (now >= motion.nextSpeedChange) {
+      if (Math.random() < 0.20) motion.dir *= -1;
+      motion.speed = randBetween(14, 28);
+      motion.nextSpeedChange = now + randBetween(2200, 5200);
+    }
+
+    const targetVx = motion.dir * motion.speed;
+    motion.vx += (targetVx - motion.vx) * Math.min(1, 8 * dt);
+
+    motion.x += motion.vx * dt;
+    motion.y = groundY(motion.size);
+
+    leg.style.transform = `translateX(-50%) scaleX(${motion.vx < 0 ? -1 : 1})`;
+    if (tr) {
+      const tx = (motion.vx < 0 ? -motion.baseTX : motion.baseTX);
+      tr.style.setProperty("--tx", `${tx}px`);
+      tr.style.setProperty("--ty", `${motion.baseTY}px`);
+    }
+
+    if (motion.x <= 0) { motion.x = 0; motion.dir = 1; motion.vx = Math.abs(motion.vx); }
+    if (motion.x >= bgRect.width - motion.size) { motion.x = bgRect.width - motion.size; motion.dir = -1; motion.vx = -Math.abs(motion.vx); }
+
+    el.style.transform = `translate3d(${motion.x}px, ${motion.y}px, 0)`;
+  }
+}
+
+function effectiveFrameMs() {
+  // Optional light LOD at huge counts
+  const n = walkers.size;
+  return n > 80 ? (1000/24) : (1000/30);
+}
+
+function masterTick(now) {
+  const dtMs = now - lastFrameTime;
+  FRAME_MS = effectiveFrameMs();
+  if (dtMs >= FRAME_MS) {
+    const dt = Math.min(0.05, dtMs / 1000); // cap dt for stability
+    if (walkers.size) {
+      // iterate on a snapshot array to avoid iterator overhead
+      const arr = Array.from(walkers.values());
+      for (let i = 0; i < arr.length; i++) {
+        const rec = arr[i];
+        if (!rec) continue;
+        updateWalker(rec, dt);
+      }
+    }
+    lastFrameTime = now;
+  }
+  requestAnimationFrame(masterTick);
+}
+requestAnimationFrame(masterTick);
+
 //////////
 // Boot //
 //////////
 
 (async function start(){
   await measureBackground();
+  applyLeggySize();
 
   LIST_URL = await resolveListUrl();
   if (!LIST_URL) {
-    console.error("[street] No working LIST_URL found. Set window.TRINKETS_API in street.html to the correct endpoint.");
+    console.error("[street] No working LIST_URL found. Set window.TRINKETS_API to the correct endpoint.");
   } else {
     DEBUG && console.log("[street] LIST_URL ready:", LIST_URL);
     await syncTrinkets();
@@ -674,5 +706,5 @@ setInterval(processLocalQueue, 1000);
   }
 
   processQueueSoon();
-  DEBUG && console.log("[street] ready; unlimited walkers, no defaults, no name bubbles; polling every", POLL_MS, "ms");
+  DEBUG && console.log("[street] ready; unlimited walkers; global 30fps ticker; polling every", POLL_MS, "ms");
 })();

@@ -472,7 +472,7 @@ function processPendingQueue(){
     const { id, src } = pendingQueue.shift();
     const normSrc = normalizeSrc(src);
     delay += staggerStep;
-    setTimeout(() => spawnTrinket(normSrc, "", id), delay);
+    setTimeout(() => spawnTrinket(normSrc, id), delay);
   }
   processingQueue = false;
 }
@@ -555,7 +555,26 @@ try {
       // No repopulate
     } else if (msg.type === 'replay_trinket') {
       handleReplayTrinket(msg);
+
+      } else if (msg.type === 'delete_trinket') {
+        const delId = String(msg.id ?? '');
+        if (delId) {
+          const toRemove = [];
+          for (const [wid, rec] of walkers.entries()) {
+            if (rec.type === 'trinket' && String(rec.sourceId) === delId) {
+                        toRemove.push(wid);
+        }
+      }
+      // remove matching walkers immediately
+      (async () => {
+        for (const wid of toRemove) await removeWalker(wid, 160);
+      })();
+      // also mark as not-displayed so a replay in the feed can re-show if needed
+      displayedTrinketIds.delete(delId);
+      pendingTrinketIds.delete(delId);
     }
+    }
+    
   };
   DEBUG && console.log("[street] admin BroadcastChannel ready");
 } catch {

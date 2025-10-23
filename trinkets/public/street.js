@@ -10,7 +10,11 @@ window.__streetBooted = true;
    - Start with ZERO walkers (no base legs).
    - Every new trinket spawns a NEW walker (no cap, no replacement).
    - TRINKET: enters from one edge, walks straight across, despawns off-screen.
-   - Admin controls still supported (spawn_leg spawns an "empty" leg on demand; clear_legs clears; replay works).
+   - Admin controls supported:
+       • spawn_leg -> adds an "empty" leg (manual only)
+       • clear_legs -> removes all walkers
+       • replay_trinket -> spawns a trinket walker once (de-duped)
+       • delete_trinket -> remove matching walker(s) immediately
    - Prune active trinkets if admin deleted them from the feed.
    - Background containment + unified sizing across resolutions.
    - Endpoint auto-discovery (or override with window.TRINKETS_API).
@@ -101,7 +105,6 @@ async function fetchJSON(u){
 // Variants & attach points
 /////////////////////////////
 
-// Keep your asset filenames
 const LEG_VARIANTS = [
   "assets/leg1_default.gif",
   "assets/leg1_bag.gif",
@@ -242,9 +245,8 @@ async function fadeOutEl(el, ms=400){
 ////////////////////////////
 
 const walkers = new Map(); // id -> { el, type, sourceId, bornAt, refs:{}, motion:{} }
-// Sets retained for potential tooling (not used for capacity anymore)
-const emptyIds = new Set();
-const trinketIds = new Set();
+const emptyIds = new Set();   // kept for admin manual spawns
+const trinketIds = new Set(); // kept for debugging/metrics
 
 function genId(){ return `w_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
 
@@ -263,7 +265,7 @@ async function removeWalker(id, fadeMs=300){
 /////////////////////////////////////////
 
 function spawnWalker(trinketSrc, meta = {}) {
-  const { /* name (unused now), */ sourceId = null } = meta;
+  const { sourceId = null } = meta;
   const wid = genId();
 
   const el = document.createElement("div");
@@ -277,7 +279,7 @@ function spawnWalker(trinketSrc, meta = {}) {
   const leg = document.createElement("img");
   leg.className = "gif";
   leg.alt = "legs";
-  leg.src = `${legSrc}?cb=${Date.now()}_${Math.random().toString(36).slice(2)}`; // cache-buster
+  leg.src = `${legSrc}?cb=${Date.now()}_${Math.random().toString(36).slice(2)}`;
   el.appendChild(leg);
 
   let type = "empty";
@@ -304,7 +306,6 @@ function spawnWalker(trinketSrc, meta = {}) {
   const motion = {};
 
   if (type === "trinket") {
-    // straight-line traverse, one-shot
     const fromLeft = Math.random() < 0.5;
     const y = groundY(size);
     let x = fromLeft ? (-size - DESPAWN_MARGIN) : (bgRect.width + DESPAWN_MARGIN);
@@ -323,7 +324,7 @@ function spawnWalker(trinketSrc, meta = {}) {
       tr.style.setProperty("--ty", `${baseTY}px`);
     }
   } else {
-    // "empty" walkers bounce inside bounds — only when manually spawned via admin
+    // "empty" (manual admin) – bounce within frame
     let x = Math.random() * Math.max(0, bgRect.width - size);
     let y = groundY(size) + randBetween(-4, 4);
     let dir = Math.random() < 0.5 ? 1 : -1;
@@ -414,7 +415,6 @@ function spawnWalker(trinketSrc, meta = {}) {
     emptyIds.delete(wid);
     trinketIds.delete(wid);
     el.remove();
-    // No repopulation (we removed defaults and the cap)
   }
 
   return wid;
@@ -453,7 +453,6 @@ function enqueueTrinket(id, name, src, force = false){
       return;
     }
   }
-  // name ignored now (no bubble), but we keep the signature
   pendingQueue.push({ id: key, name: name || "", src: src || "", force: !!force });
   if (key) pendingTrinketIds.add(key);
   processQueueSoon();
@@ -472,9 +471,31 @@ function processPendingQueue(){
     const { id, src } = pendingQueue.shift();
     const normSrc = normalizeSrc(src);
     delay += staggerStep;
+    // ✅ Correct: pass the id as sourceId (second arg)
     setTimeout(() => spawnTrinket(normSrc, id), delay);
   }
   processingQueue = false;
+}
+
+////////////////////////////
+// Replay de-dupe guard   //
+////////////////////////////
+
+// De-dupe rapid-fire "replay" events (e.g., BC + localStorage arriving together)
+const recentReplays = new Map(); // key -> lastTs
+
+function shouldAcceptReplay(key, windowMs = 1200) {
+  const now = Date.now();
+  const last = recentReplays.get(key) || 0;
+  if (now - last < windowMs) return false; // too soon → duplicate
+  recentReplays.set(key, now);
+  // prune old entries
+  if (recentReplays.size > 500) {
+    for (const [k, ts] of recentReplays) {
+      if (now - ts > windowMs * 10) recentReplays.delete(k);
+    }
+  }
+  return true;
 }
 
 /////////////////
@@ -485,7 +506,6 @@ async function syncTrinkets(){
   if (!LIST_URL) return;
 
   const url = LIST_URL + (LIST_URL.includes('?') ? '&' : '?') + `_ts=${Date.now()}`;
-
   const raw = await fetchJSON(url);
   const rows = normalizeListShape(raw);
 
@@ -504,7 +524,6 @@ async function syncTrinkets(){
     const src  = getRowSrc(row);
     if (!src) continue;
 
-    // name ignored; we still accept it from feed for compatibility
     enqueueTrinket(key, getRowName(row) || "", src);
   }
 
@@ -528,7 +547,6 @@ async function pruneDeletedTrinkets(currentIds){
   for (const wid of toRemove) {
     await removeWalker(wid, 200);
   }
-  // No repopulation (defaults removed)
 }
 
 //////////////////////////////////////////////
@@ -538,7 +556,16 @@ async function pruneDeletedTrinkets(currentIds){
 function handleReplayTrinket(payload){
   if (!payload || !payload.trinket) return;
   const { id, src } = payload.trinket;
-  enqueueTrinket(id, "", src, /*force*/ true);
+  const key = (id != null) ? String(id) : (src ? "s_" + hashStr(src) : null);
+  if (!key) return;
+
+  // prevent double-spawn if two messages arrive within ~1.2s
+  if (!shouldAcceptReplay(key, 1200)) {
+    if (DEBUG) console.log('[street] ignored duplicate replay for', key);
+    return;
+  }
+  // force enqueue so a previously shown item can be replayed
+  enqueueTrinket(key, "", src, /*force*/ true);
 }
 
 try {
@@ -552,29 +579,25 @@ try {
     } else if (msg.type === 'clear_legs') {
       const ids = Array.from(walkers.keys());
       for (const id of ids) await removeWalker(id, 150);
-      // No repopulate
     } else if (msg.type === 'replay_trinket') {
       handleReplayTrinket(msg);
-
-      } else if (msg.type === 'delete_trinket') {
-        const delId = String(msg.id ?? '');
-        if (delId) {
-          const toRemove = [];
-          for (const [wid, rec] of walkers.entries()) {
-            if (rec.type === 'trinket' && String(rec.sourceId) === delId) {
-                        toRemove.push(wid);
+    } else if (msg.type === 'delete_trinket') {
+      // immediate removal on explicit admin delete command
+      const delId = String(msg.id ?? '');
+      if (delId) {
+        const toRemove = [];
+        for (const [wid, rec] of walkers.entries()) {
+          if (rec.type === 'trinket' && String(rec.sourceId) === delId) {
+            toRemove.push(wid);
+          }
         }
+        (async () => {
+          for (const wid of toRemove) await removeWalker(wid, 160);
+        })();
+        displayedTrinketIds.delete(delId);
+        pendingTrinketIds.delete(delId);
       }
-      // remove matching walkers immediately
-      (async () => {
-        for (const wid of toRemove) await removeWalker(wid, 160);
-      })();
-      // also mark as not-displayed so a replay in the feed can re-show if needed
-      displayedTrinketIds.delete(delId);
-      pendingTrinketIds.delete(delId);
     }
-    }
-    
   };
   DEBUG && console.log("[street] admin BroadcastChannel ready");
 } catch {
@@ -608,6 +631,21 @@ function processLocalQueue() {
       })();
     } else if (cmd.type === 'replay_trinket') {
       handleReplayTrinket(cmd);
+    } else if (cmd.type === 'delete_trinket') {
+      const delId = String(cmd.id ?? '');
+      if (delId) {
+        const toRemove = [];
+        for (const [wid, rec] of walkers.entries()) {
+          if (rec.type === 'trinket' && String(rec.sourceId) === delId) {
+            toRemove.push(wid);
+          }
+        }
+        (async () => {
+          for (const wid of toRemove) await removeWalker(wid, 160);
+        })();
+        displayedTrinketIds.delete(delId);
+        pendingTrinketIds.delete(delId);
+      }
     }
   }
   if (processedCmdIds.size > 2000) {

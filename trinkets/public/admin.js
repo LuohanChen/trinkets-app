@@ -9,14 +9,21 @@ function setStatus(msg, isError=false){
   statusEl.style.color = isError ? '#c0392b' : '#111';
 }
 
-/* ---- Live command channel to street (kept) ---- */
+/* ---- Live command channel to street (fixed: no double-send) ---- */
 let adminBC = null;
 try { adminBC = new BroadcastChannel('admin-legs'); } catch {}
+
 function sendAdminCommand(cmd){
+  // Prefer BroadcastChannel; if it succeeds, don't also write to localStorage.
   if (adminBC) {
-    try { adminBC.postMessage(cmd); } catch {}
+    try {
+      adminBC.postMessage(cmd);
+      return; // prevent double-send
+    } catch {
+      // fall through to localStorage only if BC fails
+    }
   }
-  // localStorage fallback
+  // Fallback only when BroadcastChannel isn't available or failed
   try {
     const key = 'adminCmdQueue';
     const now = Date.now();
@@ -29,7 +36,7 @@ function sendAdminCommand(cmd){
 }
 
 /* =========================================================
-   Robust DELETE helper (unchanged behavior)
+   Robust DELETE helper
    ========================================================= */
 async function tryDelete(url, opts={}) {
   const res = await fetch(url + (url.includes('?')?'&':'?') + `_ts=${Date.now()}`, {
@@ -61,11 +68,10 @@ async function deleteTrinketById(id) {
 }
 
 /* =========================================================
-   Live list model: in-page map of rendered cards
+   Live list model (auto-update without page refresh)
    ========================================================= */
 const cardsById = new Map(); // id -> { el, data }
 
-/* Normalize helpers (defensive) */
 const getId    = t => t?.id ?? t?._id ?? t?.uuid ?? t?.guid ?? t?.pk ?? null;
 const getName  = t => t?.name ?? t?.trinketName ?? 'Untitled';
 const getStory = t => t?.story ?? t?.trinketText ?? '';
@@ -89,7 +95,7 @@ function buildCardNode(item) {
   // Actions
   const actions = node.querySelector('.actions');
 
-  // Replay button (kept)
+  // Replay (uses fixed sendAdminCommand to avoid duplicates)
   const replayBtn = document.createElement('button');
   replayBtn.textContent = 'Replay';
   replayBtn.addEventListener('click', () => {
@@ -106,7 +112,7 @@ function buildCardNode(item) {
   });
   actions.appendChild(replayBtn);
 
-  // Delete button
+  // Delete
   del.addEventListener('click', async () => {
     if (!confirm('Delete this submission?')) return;
     del.disabled = true; replayBtn.disabled = true;
@@ -114,9 +120,11 @@ function buildCardNode(item) {
     try {
       const ok = await deleteTrinketById(id);
       if (!ok) throw new Error('Delete endpoint not available.');
-      // remove from DOM + map immediately
+      // Remove from DOM + map immediately
       cardsById.get(String(id))?.el?.remove();
       cardsById.delete(String(id));
+      // Optionally inform street to remove immediately (no duplicate risk)
+      sendAdminCommand({ type: 'delete_trinket', id });
       setStatus('Deleted.');
       setTimeout(()=>setStatus(''), 1200);
     } catch (e) {
@@ -164,8 +172,7 @@ async function initialLoad(){
     }
     setStatus('');
 
-    // newest first if backend returns newest-last
-    const sorted = items.slice().reverse();
+    const sorted = items.slice().reverse(); // newest-first in UI
     for (const t of sorted) {
       const id = getId(t);
       const src = getShot(t);
@@ -178,13 +185,10 @@ async function initialLoad(){
   }
 }
 
-/* Fetch and only add NEW items (no full refresh) */
+/* Add only NEW items (no full refresh) */
 async function refreshIncremental(){
   try {
     const items = await fetchList();
-    // The “new” set vs what we already have
-    // Add in reverse order so that the oldest of the new batch is inserted first,
-    // keeping visual order newest on top with each prepend.
     const toAdd = [];
     for (const t of items) {
       const id = String(getId(t) ?? '');
@@ -193,8 +197,6 @@ async function refreshIncremental(){
     }
     if (!toAdd.length) return;
 
-    // If backend returns oldest->newest, we want to insert oldest-of-new first
-    // If it returns newest->oldest, you can flip this order; this general approach is safe.
     for (const t of toAdd.reverse()) {
       const src = getShot(t);
       if (!src) continue;
@@ -205,11 +207,10 @@ async function refreshIncremental(){
     setTimeout(()=>setStatus(''), 1200);
   } catch (e) {
     console.error(e);
-    // don't spam errors on background polling
   }
 }
 
-/* Optional: also reconcile removals made elsewhere (another admin tab) */
+/* Optional: reconcile removals made elsewhere */
 async function reconcileRemovals(){
   try {
     const items = await fetchList();
@@ -245,8 +246,7 @@ document.addEventListener('visibilitychange', () => {
 try {
   const bc = new BroadcastChannel('trinkets');
   bc.onmessage = () => {
-    // quick bounce refresh on a local submit event
-    refreshIncremental();
+    refreshIncremental(); // instant refresh on local submit
   };
 } catch {}
 
@@ -256,10 +256,7 @@ try {
 clearAllBtn?.addEventListener('click', async () => {
   if (!confirm('Delete ALL submissions? This cannot be undone.')) return;
   try {
-    // Try collection DELETE first
     let ok = await tryDelete(`${API}/api/trinkets`, { method: 'DELETE' });
-
-    // Fallback: delete each item currently visible
     if (!ok) {
       const ids = Array.from(cardsById.keys());
       for (const id of ids) {
@@ -267,12 +264,9 @@ clearAllBtn?.addEventListener('click', async () => {
       }
       ok = true;
     }
-
-    // Clear UI + model
     gallery.innerHTML = '';
     cardsById.clear();
 
-    if (!ok) throw new Error('Bulk delete endpoints not available.');
     setStatus('All submissions deleted.');
     setTimeout(() => setStatus(''), 1500);
   } catch (e) {
@@ -287,6 +281,5 @@ clearAllBtn?.addEventListener('click', async () => {
 (async function boot(){
   await initialLoad();
   startAutoRefresh();
-  // Optional: occasionally reconcile removals made in other tabs/sessions
-  setInterval(reconcileRemovals, 20000);
+  setInterval(reconcileRemovals, 20000); // optional
 })();

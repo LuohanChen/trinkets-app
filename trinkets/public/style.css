@@ -270,27 +270,97 @@ body { background: #9fc4da; overflow: hidden; }
 }
 
 
-/* Responsive: stay centered even on mobile */
-@media (max-width: 980px) {
-  .studio {
-    height: 100vh;
-    padding: 24px 12px;
-  }
-  .studio-header {
-    flex-direction: row;
-    justify-content: center;
-  }
-  .studio-grid {
+/* ===== Mobile responsiveness for canvas + toolbar ===== */
+
+/* Make the Konva mount keep a useful height on small screens */
+@media (max-width: 980px){
+  /* already have some rules; these tighten up spacing a bit */
+  .studio { padding: clamp(16px, 4vw, 24px); }
+  .studio-inner { height: auto; }
+  .studio-grid { grid-template-columns: 1fr; gap: 14px; }
+  #konvaStage { height: clamp(300px, 60vh, 520px); } /* responsive canvas area */
+}
+
+/* Toolbar: wrap nicely, bigger touch targets */
+.tools {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Rows created by JS: left group + right group */
+.tools .tool-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* On small screens, stack the two groups and space their contents */
+@media (max-width: 720px){
+  .tools .tool-row {
     flex-direction: column;
-    justify-content: center;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .tools .tool-row > div {
+    display: flex;
     align-items: center;
-    height: auto;
+    justify-content: space-between;  /* icons left / size+clear right */
+    gap: 10px;
+    width: 100%;
   }
-  .canvas-wrap {
-    max-width: 90vw;
-    aspect-ratio: 1 / 1;
+}
+
+/* Icon buttons: larger hit area on mobile */
+.tool-btn{
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.tool-btn i { font-size: 18px; line-height: 1; }
+
+/* Active tool color (already in your CSS, repeated here for clarity) */
+.tool-btn.active-tool { background: #0077ff; }
+
+/* Color picker: compact square swatch that scales */
+#brushColor{
+  width: 46px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+/* Brush size: let it stretch on narrow screens */
+.tools input[type="range"]{
+  min-width: 160px;
+  flex: 1 1 auto;
+}
+
+/* Submit button full-width on phones for easy tap */
+@media (max-width: 720px){
+  .submit-btn{
+    width: 100%;
+    max-width: 420px;
   }
-  .tools {
-    justify-content: center;
-  }
+}
+
+/* Cursor icon on canvas: lighter (user already added .cursor-ring i { opacity: .5 }) */
+.cursor-ring{
+  position: fixed;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+/* Ensure toolbar stays neat even on very small devices */
+@media (max-width: 380px){
+  .tool-btn{ width: 42px; height: 42px; }
+  .tool-btn i{ font-size: 16px; }
+  #brushColor{ width: 42px; height: 32px; }
+  .tools input[type="range"]{ min-width: 120px; }
 }

@@ -97,24 +97,29 @@ body { background: #9fc4da; overflow: hidden; }
 }
 
 .studio-header {
+  width: 100%;
   display: flex;
   align-items: baseline;
   justify-content: center;
   gap: 8px;
   margin-bottom: 20px;
 }
-.studio-header h2, .studio-header h3 {
+.studio-header h2 {
   margin: 0; padding: 0; background-color: white;
 }
-.studio-header h2 {
-  font-weight: 300;
-  font-size: clamp(28px, 4.8vw, 44px);
-  padding-left: 1%;
-}
+
 .studio-header h3 {
+  margin: 0; padding: 0;
+}
+.studio-header h2 {
   font-weight: 600;
   font-size: clamp(28px, 4.8vw, 44px);
+  padding-left: 1%;
   padding-right: 1%;
+}
+.studio-header h3 {
+  font-weight: 300;
+  font-size: clamp(28px, 4.8vw, 44px);
 }
 
 /* Center the entire drawing section */
